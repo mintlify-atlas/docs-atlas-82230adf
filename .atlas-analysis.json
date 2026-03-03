@@ -1,0 +1,159 @@
+{
+  "projectType": "api-service",
+  "projectName": "KoreShield",
+  "projectDescription": "Open-source security platform protecting LLM applications from prompt injection attacks",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "getting-started/installation",
+              "getting-started/quickstart"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/overview",
+              "features/rag-defense",
+              "features/attack-detection",
+              "features/security-policies"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/models/openai",
+              "integrations/models/anthropic",
+              "integrations/models/deepseek",
+              "integrations/models/gemini",
+              "integrations/models/azure-openai",
+              "integrations/models/custom-models",
+              "integrations/frameworks/langchain",
+              "integrations/frameworks/llamaindex",
+              "integrations/frameworks/autogen",
+              "integrations/frameworks/nextjs",
+              "integrations/frameworks/fastapi",
+              "integrations/frameworks/django",
+              "integrations/frameworks/flask",
+              "integrations/frameworks/express",
+              "integrations/deployment/docker",
+              "integrations/deployment/kubernetes",
+              "integrations/deployment/aws",
+              "integrations/deployment/gcp",
+              "integrations/deployment/azure",
+              "integrations/deployment/railway"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/overview",
+              "configuration/policies",
+              "configuration/rate-limiting",
+              "configuration/settings",
+              "configuration/production-checklist"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/rag-security",
+              "advanced/tool-security",
+              "advanced/streaming",
+              "advanced/performance",
+              "advanced/compliance",
+              "advanced/troubleshooting"
+            ]
+          },
+          {
+            "group": "Best Practices",
+            "pages": [
+              "best-practices/error-handling",
+              "best-practices/caching"
+            ]
+          },
+          {
+            "group": "Compliance",
+            "pages": [
+              "compliance/gdpr",
+              "compliance/hipaa",
+              "compliance/dpa"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API",
+            "pages": [
+              "api/overview",
+              "api/rest-api",
+              "api/cli"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Case Studies",
+        "groups": [
+          {
+            "group": "Use Cases",
+            "pages": [
+              "case-studies/overview",
+              "case-studies/ai-agents",
+              "case-studies/customer-service",
+              "case-studies/code-generation",
+              "case-studies/financial-services",
+              "case-studies/healthcare",
+              "case-studies/legal-tech",
+              "case-studies/ecommerce"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/overview"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-provider LLM support (OpenAI, Anthropic, DeepSeek, Gemini)",
+    "Real-time prompt injection detection",
+    "RAG Defense Engine for indirect attacks",
+    "Configurable security policies",
+    "Comprehensive audit logging",
+    "SDK support (Python, JavaScript)",
+    "Docker and Kubernetes deployment",
+    "Enterprise compliance (SOC 2, GDPR, HIPAA)"
+  ],
+  "publicApiSurface": [
+    "POST /scan - Scan prompt for security threats",
+    "POST /scan/rag - Scan RAG context for indirect injection",
+    "POST /proxy - Proxy LLM requests with security",
+    "GET /health - Service health check",
+    "GET /policies - List security policies",
+    "KoreshieldClient.scan() - Python SDK scan method",
+    "KoreshieldClient.scan_rag_context() - Python SDK RAG scan",
+    "Koreshield.scanPrompt() - JavaScript SDK scan method"
+  ]
+}
