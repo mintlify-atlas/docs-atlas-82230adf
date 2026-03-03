@@ -1,0 +1,531 @@
+---
+title: Caching Best Practices
+description: Safe and effective caching strategies for LLM security workflows
+---
+
+# Caching Best Practices
+
+Caching can reduce latency and cost, but it must be implemented carefully to avoid leaking sensitive content or serving stale results. This guide outlines safe, practical caching patterns for LLM security workflows.
+
+<Warning>
+Improper caching can leak sensitive data between users or bypass security checks. Follow these best practices carefully.
+</Warning>
+
+## What to Cache (and What Not To)
+
+### Good Candidates
+
+<CardGroup cols={3}>
+  <Card title="Scan Results" icon="shield-check">
+    Deterministic scan results for identical inputs
+  </Card>
+  <Card title="Allowlists" icon="list-check">
+    Allowlist and blocklist lookups
+  </Card>
+  <Card title="Policies" icon="file-shield">
+    Policy configurations that change infrequently
+  </Card>
+</CardGroup>
+
+### Avoid Caching
+
+<CardGroup cols={3}>
+  <Card title="Raw Prompts" icon="message-xmark">
+    Raw prompts containing personal data or PHI
+  </Card>
+  <Card title="Full Responses" icon="comment-slash">
+    Full model responses in multi-tenant systems
+  </Card>
+  <Card title="Session Data" icon="user-xmark">
+    User session data unless scoped carefully
+  </Card>
+</CardGroup>
+
+<Info>
+Cache only metadata and security decisions, never the actual content unless you have explicit user consent and proper isolation.
+</Info>
+
+## Cache Key Strategy
+
+Use a stable, privacy-safe key:
+
+- **Hash input content** instead of storing raw content
+- **Include policy version** and sensitivity in the key
+- **Include tenant** or environment identifiers
+
+```typescript
+import crypto from 'crypto';
+
+function generateCacheKey(
+  content: string,
+  policyVersion: string,
+  tenantId: string
+): string {
+  // Hash the content for privacy
+  const contentHash = crypto
+    .createHash('sha256')
+    .update(content)
+    .digest('hex');
+
+  // Format: scan:{tenant}:{policyVersion}:{contentHash}
+  return `scan:${tenantId}:${policyVersion}:${contentHash}`;
+}
+
+// Usage
+const cacheKey = generateCacheKey(
+  userMessage,
+  'v2.1',
+  'tenant-123'
+);
+```
+
+<Tip>
+Use SHA-256 hashing for cache keys to prevent content leakage in cache storage or logs.
+</Tip>
+
+## TTL and Invalidation
+
+```typescript
+import Redis from 'ioredis';
+import { Koreshield } from 'Koreshield-sdk';
+
+const redis = new Redis(process.env.REDIS_URL);
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+});
+
+const CACHE_TTL = {
+  scanResults: 300, // 5 minutes for security decisions
+  policies: 3600, // 1 hour for policies
+  allowlists: 1800, // 30 minutes for allowlists
+};
+
+async function cachedScan(
+  content: string,
+  tenantId: string,
+  policyVersion: string
+) {
+  const cacheKey = generateCacheKey(content, policyVersion, tenantId);
+
+  // Check cache
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  // Scan with KoreShield
+  const scan = await koreshield.scan({ content });
+
+  // Cache result with short TTL
+  await redis.setex(
+    cacheKey,
+    CACHE_TTL.scanResults,
+    JSON.stringify({
+      threat_detected: scan.threat_detected,
+      threat_type: scan.threat_type,
+      confidence: scan.confidence,
+      // DO NOT cache: content, patterns, full response
+    })
+  );
+
+  return scan;
+}
+```
+
+<Warning>
+Use short TTLs (5-10 minutes) for security decisions to ensure policies stay current. Never use long-lived caches for threat detection.
+</Warning>
+
+## Cache Invalidation
+
+```typescript
+// Invalidate when policies change
+async function updatePolicy(policyId: string, newPolicy: Policy) {
+  // Update policy
+  await savePolicyToDatabase(policyId, newPolicy);
+
+  // Invalidate all caches for this policy version
+  const pattern = `scan:*:${policyId}:*`;
+  const keys = await redis.keys(pattern);
+
+  if (keys.length > 0) {
+    await redis.del(...keys);
+    console.log(`Invalidated ${keys.length} cache entries`);
+  }
+}
+
+// Invalidate for specific tenant
+async function invalidateTenantCache(tenantId: string) {
+  const pattern = `scan:${tenantId}:*`;
+  const keys = await redis.keys(pattern);
+
+  if (keys.length > 0) {
+    await redis.del(...keys);
+  }
+}
+```
+
+## Redis for Distributed Caching
+
+If you use Redis, keep it private and secured.
+
+```yaml
+# docker-compose.yml
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:6379:6379" # Only bind to localhost
+    volumes:
+      - redis_data:/data
+    networks:
+      - private
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  redis_data:
+```
+
+```typescript
+// Configure secure Redis connection
+import Redis from 'ioredis';
+
+const redis = new Redis({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  password: process.env.REDIS_PASSWORD,
+  tls: process.env.NODE_ENV === 'production' ? {} : undefined,
+  maxRetriesPerRequest: 3,
+  enableReadyCheck: true,
+  lazyConnect: true,
+});
+
+// Test connection
+await redis.connect();
+console.log('Redis connected securely');
+```
+
+<Info>
+Always use TLS for Redis in production and restrict network access to your application servers only.
+</Info>
+
+## In-Memory Caching (LRU)
+
+For single-instance deployments, use LRU cache:
+
+```typescript
+import LRU from 'lru-cache';
+
+interface ScanResult {
+  threat_detected: boolean;
+  threat_type?: string;
+  confidence: number;
+  timestamp: number;
+}
+
+const cache = new LRU<string, ScanResult>({
+  max: 10000, // Max 10k entries
+  ttl: 1000 * 60 * 5, // 5 minutes
+  updateAgeOnGet: true, // Refresh TTL on access
+  allowStale: false, // Never serve stale results
+});
+
+async function lruCachedScan(
+  content: string,
+  policyVersion: string
+): Promise<ScanResult> {
+  const key = generateCacheKey(content, policyVersion, 'default');
+
+  // Check cache
+  const cached = cache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  // Scan
+  const scan = await koreshield.scan({ content });
+
+  // Store in cache
+  const result: ScanResult = {
+    threat_detected: scan.threat_detected,
+    threat_type: scan.threat_type,
+    confidence: scan.confidence,
+    timestamp: Date.now(),
+  };
+
+  cache.set(key, result);
+
+  return result;
+}
+```
+
+## Multi-Tenant Isolation
+
+```typescript
+// WRONG: Cache key without tenant isolation
+const badKey = `scan:${contentHash}`; // ❌ Can leak between tenants!
+
+// CORRECT: Cache key with tenant isolation
+const goodKey = `scan:${tenantId}:${contentHash}`; // ✅ Tenant-scoped
+
+async function multiTenantCachedScan(
+  content: string,
+  tenantId: string
+) {
+  // Always include tenant ID in cache key
+  const cacheKey = `scan:${tenantId}:${hashContent(content)}`;
+
+  const cached = await redis.get(cacheKey);
+  if (cached) {
+    // Verify tenant ID matches
+    const data = JSON.parse(cached);
+    if (data.tenantId !== tenantId) {
+      // Cache poisoning detected
+      console.error('Cache tenant mismatch!');
+      await redis.del(cacheKey);
+      return performScan(content, tenantId);
+    }
+    return data;
+  }
+
+  const scan = await koreshield.scan({
+    content,
+    metadata: { tenantId },
+  });
+
+  // Store with tenant ID
+  await redis.setex(
+    cacheKey,
+    300,
+    JSON.stringify({
+      ...scan,
+      tenantId, // Include for verification
+    })
+  );
+
+  return scan;
+}
+```
+
+<Warning>
+Always include tenant ID in cache keys for multi-tenant systems to prevent cross-tenant data leakage.
+</Warning>
+
+## Safety Guidelines
+
+### Minimize Cached Data
+
+```typescript
+// BAD: Caching too much data
+const badCache = {
+  content: userMessage, // ❌ Stores raw content
+  response: llmResponse, // ❌ Stores full response
+  user: userData, // ❌ Stores PII
+  scan: fullScanResult, // ❌ Stores all metadata
+};
+
+// GOOD: Cache only essentials
+const goodCache = {
+  threat_detected: scan.threat_detected, // ✅ Boolean decision
+  threat_type: scan.threat_type, // ✅ Category only
+  confidence: scan.confidence, // ✅ Numeric score
+  timestamp: Date.now(), // ✅ For debugging
+};
+```
+
+### Never Cache Secrets
+
+```typescript
+// Implement cache value sanitization
+function sanitizeCacheValue(data: any) {
+  const sensitive = [
+    'apiKey',
+    'token',
+    'password',
+    'secret',
+    'ssn',
+    'creditCard',
+    'content', // Original user content
+  ];
+
+  const sanitized = { ...data };
+
+  sensitive.forEach((field) => {
+    if (field in sanitized) {
+      delete sanitized[field];
+    }
+  });
+
+  return sanitized;
+}
+
+// Usage
+await redis.setex(
+  cacheKey,
+  300,
+  JSON.stringify(sanitizeCacheValue(scan))
+);
+```
+
+## Testing and Monitoring
+
+```typescript
+import { Histogram, Counter } from 'prom-client';
+
+// Cache metrics
+const cacheHits = new Counter({
+  name: 'koreshield_cache_hits_total',
+  help: 'Total cache hits',
+});
+
+const cacheMisses = new Counter({
+  name: 'koreshield_cache_misses_total',
+  help: 'Total cache misses',
+});
+
+const cacheDuration = new Histogram({
+  name: 'koreshield_cache_operation_ms',
+  help: 'Cache operation duration',
+  buckets: [1, 5, 10, 25, 50, 100],
+});
+
+async function monitoredCachedScan(content: string) {
+  const start = Date.now();
+  const cacheKey = generateCacheKey(content, 'v1', 'default');
+
+  const cached = await redis.get(cacheKey);
+
+  if (cached) {
+    cacheHits.inc();
+    cacheDuration.observe(Date.now() - start);
+    return JSON.parse(cached);
+  }
+
+  cacheMisses.inc();
+
+  const scan = await koreshield.scan({ content });
+  await redis.setex(cacheKey, 300, JSON.stringify(scan));
+
+  cacheDuration.observe(Date.now() - start);
+  return scan;
+}
+
+// Calculate cache hit ratio
+function getCacheHitRatio() {
+  const hits = cacheHits['hashMap'][''].value;
+  const misses = cacheMisses['hashMap'][''].value;
+  return hits / (hits + misses);
+}
+```
+
+<Tip>
+Target a cache hit ratio of 60-80% for optimal performance. Monitor and adjust TTL values based on your traffic patterns.
+</Tip>
+
+## Validation
+
+```typescript
+// Validate cached results match live results
+async function validateCache(content: string) {
+  const cacheKey = generateCacheKey(content, 'v1', 'test');
+
+  // Get cached result
+  const cached = await redis.get(cacheKey);
+  const cachedResult = cached ? JSON.parse(cached) : null;
+
+  // Get live result
+  const liveResult = await koreshield.scan({ content });
+
+  // Compare
+  if (cachedResult && liveResult) {
+    const match =
+      cachedResult.threat_detected === liveResult.threat_detected &&
+      cachedResult.threat_type === liveResult.threat_type;
+
+    if (!match) {
+      console.error('Cache mismatch detected!', {
+        cached: cachedResult,
+        live: liveResult,
+      });
+    }
+
+    return match;
+  }
+
+  return true;
+}
+```
+
+## Common Questions
+
+<AccordionGroup>
+  <Accordion title="Should I cache scan results in production?">
+    Yes, but with caution:
+    - Use short TTLs (5-10 minutes)
+    - Hash content for cache keys
+    - Include policy version in keys
+    - Invalidate on policy changes
+    - Never cache raw content
+
+    Caching can reduce latency by 80-90% for repeated content.
+  </Accordion>
+
+  <Accordion title="How do I handle cache poisoning?">
+    Protect against cache poisoning:
+    - Include tenant ID in all cache keys
+    - Validate data on cache reads
+    - Use signed/encrypted cache values for sensitive data
+    - Implement cache TTLs (never infinite)
+    - Monitor for suspicious cache patterns
+  </Accordion>
+
+  <Accordion title="What's the best cache eviction policy?">
+    Use **LRU (Least Recently Used)** for most cases:
+    - Automatically evicts old entries
+    - Keeps hot data in cache
+    - Prevents unbounded growth
+
+    Alternative: **TTL-based** for time-sensitive security decisions.
+  </Accordion>
+
+  <Accordion title="Should I use Redis or in-memory cache?">
+    **Redis** for:
+    - Multi-instance deployments
+    - Distributed systems
+    - Shared cache across services
+
+    **In-memory (LRU)** for:
+    - Single-instance applications
+    - Lower latency requirements (&lt;5ms)
+    - Simpler deployment
+  </Accordion>
+
+  <Accordion title="How do I test cache invalidation?">
+    Write tests that verify:
+    ```typescript
+    test('cache invalidates on policy change', async () => {
+      const content = 'test message';
+
+      // Warm cache
+      await cachedScan(content, 'v1');
+
+      // Change policy
+      await updatePolicy('v1', newPolicy);
+
+      // Verify cache is invalidated
+      const cached = await redis.get(cacheKey);
+      expect(cached).toBeNull();
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Performance Optimization](/advanced/performance)
+- [Rate Limiting](/configuration/rate-limiting)
+- [Security Overview](/features/security-policies)

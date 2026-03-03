@@ -1,0 +1,322 @@
+---
+title: Rate Limiting
+description: Configure distributed rate limiting with Redis for consistent traffic control
+---
+
+# Rate Limiting
+
+KoreShield uses Redis for distributed rate limiting and shared statistics. When Redis is enabled, multiple proxy instances can enforce consistent rate limits across your deployment.
+
+## Enable Redis
+
+Configure Redis in the `redis` section of your `config.yaml`:
+
+```yaml
+redis:
+  enabled: true
+  url: "redis://localhost:6379/0"
+```
+
+## Configuration Parameters
+
+<ParamField path="redis.enabled" type="boolean" default="false">
+  Enable Redis-based distributed rate limiting
+</ParamField>
+
+<ParamField path="redis.url" type="string" required>
+  Redis connection URL. Supports `redis://`, `rediss://` (TLS), and `unix://` schemes.
+  
+  Format: `redis://[username:password@]host:port/database`
+</ParamField>
+
+## Connection URL Formats
+
+### Standard Redis
+
+```yaml
+redis:
+  enabled: true
+  url: "redis://localhost:6379/0"
+```
+
+### Redis with Authentication
+
+```yaml
+redis:
+  enabled: true
+  url: "redis://:your-password@localhost:6379/0"
+```
+
+<Warning>
+  Avoid hardcoding passwords in configuration files. Use environment variable substitution or a secrets manager.
+</Warning>
+
+### Redis with TLS (Production)
+
+```yaml
+redis:
+  enabled: true
+  url: "rediss://user:password@redis.example.com:6380/0"
+```
+
+<Note>
+  The `rediss://` scheme enables TLS encryption. Always use TLS in production environments.
+</Note>
+
+### Unix Socket
+
+```yaml
+redis:
+  enabled: true
+  url: "unix:///var/run/redis/redis.sock?db=0"
+```
+
+## Production Configuration
+
+### Managed Redis Service (Recommended)
+
+Use a managed Redis service for production deployments:
+
+```yaml
+redis:
+  enabled: true
+  url: "rediss://default:${REDIS_PASSWORD}@prod-redis.example.com:6380/0"
+```
+
+<Note>
+  Popular managed Redis services:
+  - **AWS ElastiCache** - Fully managed Redis on AWS
+  - **Redis Cloud** - Official Redis managed service
+  - **Azure Cache for Redis** - Microsoft Azure Redis service
+  - **Google Cloud Memorystore** - Google Cloud Redis service
+</Note>
+
+### High Availability Setup
+
+For production, use Redis Sentinel or Redis Cluster:
+
+```yaml
+redis:
+  enabled: true
+  # Sentinel example
+  url: "redis-sentinel://sentinel1:26379,sentinel2:26379,sentinel3:26379/mymaster/0"
+```
+
+### Connection Pooling
+
+KoreShield automatically manages connection pooling. For high-traffic deployments, monitor Redis connection metrics:
+
+```bash
+# Check Redis connections
+redis-cli INFO clients
+```
+
+## Production Guidance
+
+<AccordionGroup>
+  <Accordion title="How do I secure Redis connections?">
+    Follow these security best practices:
+
+    1. **Enable TLS** - Use `rediss://` URLs
+    2. **Require Authentication** - Set a strong password
+    3. **Network Isolation** - Run Redis in a private network
+    4. **Firewall Rules** - Restrict access to KoreShield instances
+    5. **Regular Updates** - Keep Redis version current
+
+    Example secure configuration:
+    ```yaml
+    redis:
+      enabled: true
+      url: "rediss://:${REDIS_PASSWORD}@redis.internal:6380/0"
+    ```
+  </Accordion>
+
+  <Accordion title="How do I ensure all instances use the same Redis?">
+    All KoreShield proxy instances must point to the same Redis instance or cluster:
+
+    1. Use a shared configuration file or environment variables
+    2. Verify connection in startup logs: `grep "Redis" koreshield.log`
+    3. Test with multiple instances to confirm rate limits are shared
+
+    ```bash
+    # Instance 1
+    export REDIS_URL="redis://shared-redis:6379/0"
+    koreshield --config config.yaml
+
+    # Instance 2 (should use same Redis)
+    export REDIS_URL="redis://shared-redis:6379/0"
+    koreshield --config config.yaml
+    ```
+  </Accordion>
+
+  <Accordion title="What Redis memory settings should I use?">
+    Configure Redis memory limits and eviction policies:
+
+    ```bash
+    # Set max memory (adjust based on your needs)
+    redis-cli CONFIG SET maxmemory 2gb
+
+    # Set eviction policy for rate limiting data
+    redis-cli CONFIG SET maxmemory-policy volatile-lru
+    ```
+
+    Recommended settings:
+    - **maxmemory**: 2-4GB for typical deployments
+    - **maxmemory-policy**: `volatile-lru` (evict least recently used keys with TTL)
+  </Accordion>
+
+  <Accordion title="How do I monitor Redis performance?">
+    Monitor these key Redis metrics:
+
+    ```bash
+    # Connection stats
+    redis-cli INFO stats | grep total_connections
+
+    # Memory usage
+    redis-cli INFO memory | grep used_memory_human
+
+    # Operations per second
+    redis-cli INFO stats | grep instantaneous_ops_per_sec
+    ```
+
+    Set up alerts for:
+    - High memory usage (>80%)
+    - Connection errors
+    - Slow queries
+    - Replication lag (if using HA)
+  </Accordion>
+</AccordionGroup>
+
+## Validation
+
+### Verify Redis Connectivity
+
+Check KoreShield startup logs to confirm Redis connection:
+
+```bash
+# Check for successful Redis connection
+grep -i "redis" koreshield.log | head -10
+```
+
+Expected output:
+```
+INFO: Redis connection established: redis://localhost:6379/0
+INFO: Rate limiting enabled with distributed backend
+```
+
+### Test Rate Limiting
+
+Load test to verify requests are throttled consistently:
+
+```bash
+# Send rapid requests from multiple clients
+ab -n 1000 -c 10 http://localhost:8000/v1/chat/completions
+
+# Check for rate limit responses (HTTP 429)
+grep "429" access.log | wc -l
+```
+
+<Note>
+  Rate limits should be enforced consistently across all KoreShield instances when Redis is properly configured.
+</Note>
+
+### Distributed Behavior Test
+
+Verify rate limiting works across multiple instances:
+
+<Steps>
+  <Step title="Start Multiple Instances">
+    Launch 2+ KoreShield instances with the same Redis configuration
+  </Step>
+  <Step title="Send Traffic to Different Instances">
+    Route requests to different instances using a load balancer or manual testing
+  </Step>
+  <Step title="Verify Shared Limits">
+    Confirm that rate limits are enforced across all instances, not per-instance
+  </Step>
+  <Step title="Check Redis Keys">
+    Inspect Redis keys to verify rate limit data is being shared:
+    ```bash
+    redis-cli KEYS "koreshield:ratelimit:*"
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Connection Failures
+
+<Warning>
+  If Redis connection fails, KoreShield may fall back to in-memory rate limiting (per-instance only).
+</Warning>
+
+Common connection issues:
+
+```bash
+# Test Redis connectivity
+redis-cli -u redis://localhost:6379/0 PING
+
+# Check network access
+telnet redis-host 6379
+
+# Verify authentication
+redis-cli -u redis://:password@localhost:6379/0 AUTH password
+```
+
+### Performance Issues
+
+If Redis is slow:
+
+1. **Check latency**: `redis-cli --latency`
+2. **Review slow queries**: `redis-cli SLOWLOG GET 10`
+3. **Monitor memory**: `redis-cli INFO memory`
+4. **Check network**: Ensure Redis is on same network/region
+
+### Data Persistence
+
+<Note>
+  Rate limiting data is ephemeral (TTL-based). You don't need Redis persistence (RDB/AOF) for rate limiting unless you want to preserve limits across Redis restarts.
+</Note>
+
+Disable persistence for better performance:
+
+```bash
+# Disable RDB snapshots
+redis-cli CONFIG SET save ""
+
+# Disable AOF
+redis-cli CONFIG SET appendonly no
+```
+
+## Environment Variables
+
+Use environment variables for sensitive connection details:
+
+```yaml
+redis:
+  enabled: true
+  url: "${REDIS_URL}"
+```
+
+```bash
+# Set via environment
+export REDIS_URL="rediss://:${REDIS_PASSWORD}@redis.example.com:6380/0"
+koreshield --config config.yaml
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Redis Integration" icon="database" href="/integrations/databases/redis">
+    Detailed Redis setup and integration guide
+  </Card>
+  <Card title="General Settings" icon="gear" href="/configuration/settings">
+    Configure other global settings
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/features/monitoring">
+    Monitor rate limiting metrics
+  </Card>
+  <Card title="Production Checklist" icon="list-check" href="/configuration/production-checklist">
+    Complete production deployment guide
+  </Card>
+</CardGroup>

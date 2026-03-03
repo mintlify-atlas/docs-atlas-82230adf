@@ -1,0 +1,491 @@
+---
+title: General Settings
+description: Configure server, logging, providers, monitoring, and alerting settings
+---
+
+# General Settings
+
+This page covers the core configuration settings in `config.yaml`, including server options, logging, provider setup, monitoring, and alerting.
+
+## Server Configuration
+
+Configure the KoreShield server host and port:
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8000
+```
+
+### Parameters
+
+<ParamField path="server.host" type="string" default="0.0.0.0">
+  IP address to bind the server to. Use `0.0.0.0` to listen on all interfaces.
+</ParamField>
+
+<ParamField path="server.port" type="integer" default="8000">
+  Port number for the KoreShield server
+</ParamField>
+
+<Note>
+  In production, KoreShield typically runs behind a load balancer or reverse proxy. Bind to `0.0.0.0` to accept connections from the proxy.
+</Note>
+
+## Logging Configuration
+
+Control logging output, format, and destination:
+
+```yaml
+logging:
+  level: INFO
+  json_logs: false
+  container_mode: false
+  file: logs/koreshield.log
+```
+
+### Parameters
+
+<ParamField path="logging.level" type="string" default="INFO">
+  Log level. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+</ParamField>
+
+<ParamField path="logging.json_logs" type="boolean" default="false">
+  Enable structured JSON logging for easier parsing by log aggregators
+</ParamField>
+
+<ParamField path="logging.container_mode" type="boolean" default="false">
+  Log to stdout instead of files when running in containers
+</ParamField>
+
+<ParamField path="logging.file" type="string" default="logs/koreshield.log">
+  Log file path (ignored if `container_mode: true`)
+</ParamField>
+
+### Production Recommendations
+
+<CodeGroup>
+```yaml Development
+logging:
+  level: DEBUG
+  json_logs: false
+  container_mode: false
+  file: logs/koreshield.log
+```
+
+```yaml Production (Container)
+logging:
+  level: INFO
+  json_logs: true
+  container_mode: true
+```
+
+```yaml Production (VM)
+logging:
+  level: INFO
+  json_logs: true
+  container_mode: false
+  file: /var/log/koreshield/koreshield.log
+```
+</CodeGroup>
+
+<Warning>
+  Always enable `json_logs: true` in production for structured logging. This makes it easier to query and analyze logs in tools like ELK, Splunk, or CloudWatch.
+</Warning>
+
+## Security Configuration
+
+Define security policies and threat detection behavior:
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+<Note>
+  See [Security Policies](/configuration/policies) for detailed policy configuration.
+</Note>
+
+## Provider Configuration
+
+Enable and configure AI provider integrations:
+
+```yaml
+providers:
+  deepseek:
+    enabled: true
+    base_url: "https://api.deepseek.com/v1"
+  openai:
+    enabled: false
+    base_url: "https://api.openai.com/v1"
+  anthropic:
+    enabled: false
+    base_url: "https://api.anthropic.com/v1"
+  gemini:
+    enabled: false
+    base_url: "https://generativelanguage.googleapis.com/v1beta"
+  azure_openai:
+    enabled: false
+    base_url: "https://your-resource-name.openai.azure.com"
+```
+
+### Provider Parameters
+
+<ParamField path="providers.<provider>.enabled" type="boolean" default="false">
+  Enable or disable the provider
+</ParamField>
+
+<ParamField path="providers.<provider>.base_url" type="string" required>
+  Base URL for the provider's API endpoint
+</ParamField>
+
+### Environment Variables
+
+Provider API keys must be set via environment variables:
+
+<CodeGroup>
+```bash OpenAI
+export OPENAI_API_KEY="sk-..."
+```
+
+```bash Anthropic
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+```bash DeepSeek
+export DEEPSEEK_API_KEY="..."
+```
+
+```bash Google Gemini
+export GOOGLE_API_KEY="..."
+```
+
+```bash Azure OpenAI
+export AZURE_OPENAI_API_KEY="..."
+```
+</CodeGroup>
+
+<Warning>
+  Never hardcode API keys in configuration files. Always use environment variables or a secrets manager.
+</Warning>
+
+### Multi-Provider Setup
+
+Enable multiple providers for failover or routing:
+
+```yaml
+providers:
+  openai:
+    enabled: true
+    base_url: "https://api.openai.com/v1"
+  anthropic:
+    enabled: true
+    base_url: "https://api.anthropic.com/v1"
+  deepseek:
+    enabled: true
+    base_url: "https://api.deepseek.com/v1"
+```
+
+<AccordionGroup>
+  <Accordion title="How does KoreShield route between multiple providers?">
+    When multiple providers are enabled, KoreShield routes requests based on the model specified in the API call. For example:
+    - `gpt-4` → OpenAI
+    - `claude-3-opus` → Anthropic
+    - `deepseek-chat` → DeepSeek
+
+    If a provider is unavailable, requests will fail unless you implement custom failover logic.
+  </Accordion>
+
+  <Accordion title="Can I use custom provider URLs?">
+    Yes, you can override the base URL for any provider. This is useful for:
+    - Self-hosted model endpoints
+    - Regional endpoints
+    - Custom proxy configurations
+
+    ```yaml
+    providers:
+      openai:
+        enabled: true
+        base_url: "https://custom-proxy.example.com/openai/v1"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Redis Configuration
+
+Enable distributed rate limiting with Redis:
+
+```yaml
+redis:
+  enabled: true
+  url: "redis://localhost:6379/0"
+```
+
+<Note>
+  See [Rate Limiting](/configuration/rate-limiting) for detailed Redis configuration and production setup.
+</Note>
+
+## Monitoring Configuration
+
+Enable health checks and monitoring:
+
+```yaml
+monitoring:
+  enabled: true
+  check_interval_seconds: 60
+```
+
+### Parameters
+
+<ParamField path="monitoring.enabled" type="boolean" default="true">
+  Enable monitoring and health checks
+</ParamField>
+
+<ParamField path="monitoring.check_interval_seconds" type="integer" default="60">
+  Interval between health checks in seconds
+</ParamField>
+
+### Health Check Endpoint
+
+When monitoring is enabled, KoreShield exposes a health check endpoint:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "checks": {
+    "redis": "connected",
+    "providers": "operational"
+  }
+}
+```
+
+<Note>
+  Configure your load balancer to use `/health` for health checks.
+</Note>
+
+## Alerting Configuration
+
+Configure alerts for security events and system health:
+
+```yaml
+alerting:
+  enabled: false
+  rules:
+    - name: "High Attack Rate"
+      condition: "attacks_detected > 10"
+      severity: "warning"
+      channels: ["email", "slack"]
+      cooldown_minutes: 5
+      description: "Alert when attack detection rate is high"
+      enabled: true
+```
+
+### Alert Parameters
+
+<ParamField path="alerting.enabled" type="boolean" default="false">
+  Enable alerting system
+</ParamField>
+
+<ParamField path="alerting.rules[].name" type="string" required>
+  Human-readable name for the alert rule
+</ParamField>
+
+<ParamField path="alerting.rules[].condition" type="string" required>
+  Condition expression that triggers the alert (e.g., `attacks_detected > 10`)
+</ParamField>
+
+<ParamField path="alerting.rules[].severity" type="string" default="warning">
+  Alert severity level: `info`, `warning`, `critical`
+</ParamField>
+
+<ParamField path="alerting.rules[].channels" type="array" required>
+  Notification channels: `email`, `slack`, `pagerduty`, `webhook`
+</ParamField>
+
+<ParamField path="alerting.rules[].cooldown_minutes" type="integer" default="5">
+  Minimum time between repeated alerts for the same condition
+</ParamField>
+
+<ParamField path="alerting.rules[].enabled" type="boolean" default="true">
+  Enable or disable this specific alert rule
+</ParamField>
+
+### Alert Examples
+
+<CodeGroup>
+```yaml High Attack Rate
+alerting:
+  enabled: true
+  rules:
+    - name: "High Attack Rate"
+      condition: "attacks_detected > 10"
+      severity: "warning"
+      channels: ["slack"]
+      cooldown_minutes: 5
+      enabled: true
+```
+
+```yaml Provider Outage
+alerting:
+  enabled: true
+  rules:
+    - name: "Provider Unavailable"
+      condition: "provider_errors > 5"
+      severity: "critical"
+      channels: ["pagerduty", "email"]
+      cooldown_minutes: 15
+      enabled: true
+```
+
+```yaml Rate Limit Exceeded
+alerting:
+  enabled: true
+  rules:
+    - name: "Rate Limit Threshold"
+      condition: "rate_limit_hits > 100"
+      severity: "info"
+      channels: ["email"]
+      cooldown_minutes: 30
+      enabled: true
+```
+</CodeGroup>
+
+<Warning>
+  Configure alert channels (Slack webhook, email SMTP, etc.) via environment variables to avoid exposing credentials in configuration files.
+</Warning>
+
+## Complete Production Example
+
+Here's a complete production-ready configuration:
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+logging:
+  level: INFO
+  json_logs: true
+  container_mode: true
+
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+
+providers:
+  openai:
+    enabled: true
+    base_url: "https://api.openai.com/v1"
+  anthropic:
+    enabled: true
+    base_url: "https://api.anthropic.com/v1"
+
+redis:
+  enabled: true
+  url: "rediss://:${REDIS_PASSWORD}@redis.example.com:6380/0"
+
+monitoring:
+  enabled: true
+  check_interval_seconds: 60
+
+alerting:
+  enabled: true
+  rules:
+    - name: "High Attack Rate"
+      condition: "attacks_detected > 10"
+      severity: "warning"
+      channels: ["slack", "email"]
+      cooldown_minutes: 5
+      enabled: true
+    - name: "Provider Outage"
+      condition: "provider_errors > 5"
+      severity: "critical"
+      channels: ["pagerduty"]
+      cooldown_minutes: 10
+      enabled: true
+```
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="How do I validate my configuration before deploying?">
+    KoreShield validates configuration on startup. To test:
+
+    ```bash
+    # Dry run to validate config
+    koreshield --config config.yaml --validate
+
+    # Check startup logs for errors
+    koreshield --config config.yaml 2>&1 | grep -i "error\|warning"
+    ```
+  </Accordion>
+
+  <Accordion title="Can I use environment variables in config.yaml?">
+    Yes, use `${VARIABLE_NAME}` syntax:
+
+    ```yaml
+    redis:
+      enabled: true
+      url: "redis://:${REDIS_PASSWORD}@${REDIS_HOST}:6379/0"
+
+    server:
+      port: ${KORESHIELD_PORT:-8000}  # Default to 8000
+    ```
+  </Accordion>
+
+  <Accordion title="What's the recommended logging level for production?">
+    Use `INFO` for production. This provides:
+    - Request/response logging
+    - Security event tracking
+    - Error reporting
+
+    Use `DEBUG` only for troubleshooting (generates high log volume).
+  </Accordion>
+
+  <Accordion title="How do I rotate log files?">
+    When using file-based logging (not container mode), use logrotate:
+
+    ```bash
+    # /etc/logrotate.d/koreshield
+    /var/log/koreshield/*.log {
+      daily
+      rotate 7
+      compress
+      delaycompress
+      missingok
+      notifempty
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Security Policies" icon="shield" href="/configuration/policies">
+    Configure threat detection and response policies
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/configuration/rate-limiting">
+    Set up Redis-based distributed rate limiting
+  </Card>
+  <Card title="Production Checklist" icon="list-check" href="/configuration/production-checklist">
+    Pre-deployment checklist for production
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/features/monitoring">
+    Monitor KoreShield metrics and health
+  </Card>
+</CardGroup>

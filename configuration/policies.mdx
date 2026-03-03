@@ -1,0 +1,307 @@
+---
+title: Security Policies
+description: Configure security policies, sensitivity levels, and threat response actions
+---
+
+# Security Policies
+
+Policies define how KoreShield detects and responds to security threats. Use `sensitivity` to tune detection strictness and `default_action` to decide what happens when a threat is detected.
+
+## Core Policy Settings
+
+Configure security policies in the `security` section of your `config.yaml`:
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+## Configuration Parameters
+
+<ParamField path="security.sensitivity" type="string" default="medium">
+  Detection sensitivity level. Controls how strict threat detection is.
+  
+  Options:
+  - `low` - Require higher confidence to flag content
+  - `medium` - Balanced for most production use
+  - `high` - Strict detection with fewer false negatives
+</ParamField>
+
+<ParamField path="security.default_action" type="string" default="block">
+  Default action when a threat is detected.
+  
+  Options:
+  - `allow` - Permit traffic without restrictions
+  - `warn` - Allow but log as a security event
+  - `block` - Reject requests that violate policy
+</ParamField>
+
+<ParamField path="security.features.sanitization" type="boolean" default="true">
+  Enable input sanitization to remove potentially harmful content
+</ParamField>
+
+<ParamField path="security.features.detection" type="boolean" default="true">
+  Enable threat detection using the detection engine
+</ParamField>
+
+<ParamField path="security.features.policy_enforcement" type="boolean" default="true">
+  Enable policy enforcement based on detected threats
+</ParamField>
+
+## Sensitivity Levels
+
+### Low Sensitivity
+
+Best for development or testing environments where you want to minimize false positives:
+
+```yaml
+security:
+  sensitivity: low
+  default_action: warn
+```
+
+<Note>
+  Low sensitivity requires higher confidence scores to flag content as malicious. This may miss some attacks but reduces false positives.
+</Note>
+
+### Medium Sensitivity
+
+Recommended for most production deployments with balanced detection:
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+```
+
+<Note>
+  Medium sensitivity provides a good balance between catching real threats and avoiding false positives.
+</Note>
+
+### High Sensitivity
+
+For high-security environments where you want maximum protection:
+
+```yaml
+security:
+  sensitivity: high
+  default_action: block
+```
+
+<Warning>
+  High sensitivity may produce more false positives. Monitor your logs and adjust allowlists accordingly.
+</Warning>
+
+## Threat Actions
+
+### Allow
+
+Permit all traffic without restrictions. Use only in development:
+
+```yaml
+security:
+  default_action: allow
+  features:
+    policy_enforcement: false
+```
+
+<Warning>
+  Using `allow` as default action disables security protection. Only use in non-production environments.
+</Warning>
+
+### Warn
+
+Allow traffic but log security events for monitoring:
+
+```yaml
+security:
+  default_action: warn
+  features:
+    detection: true
+    policy_enforcement: true
+```
+
+<Note>
+  Warn mode is useful during initial deployment to understand threat patterns before enforcing blocks.
+</Note>
+
+### Block
+
+Reject requests that violate security policies (recommended for production):
+
+```yaml
+security:
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+## Custom Rules and Lists
+
+KoreShield supports custom detection rules to reduce false positives or block known risks:
+
+<AccordionGroup>
+  <Accordion title="How do custom rules work?">
+    Custom rules are defined using the detection engine DSL (Domain-Specific Language). They allow you to:
+    - Define custom attack patterns
+    - Create allowlists for known safe patterns
+    - Build blocklists for known malicious content
+    - Override default detection behavior
+
+    See [Attack Detection](/features/attack-detection) for detailed rule patterns and syntax.
+  </Accordion>
+
+  <Accordion title="When should I use allowlists?">
+    Use allowlists to reduce false positives:
+    - Legitimate patterns flagged incorrectly
+    - Known safe API calls or queries
+    - Internal testing patterns
+    - Trusted user behaviors
+
+    Example:
+    ```yaml
+    security:
+      allowlist:
+        - pattern: "internal_api_test_*"
+          reason: "Internal testing patterns"
+    ```
+  </Accordion>
+
+  <Accordion title="When should I use blocklists?">
+    Use blocklists for known threats:
+    - Previously identified attack patterns
+    - Known malicious payloads
+    - Banned user agents or IP ranges
+    - Compliance requirements
+
+    Example:
+    ```yaml
+    security:
+      blocklist:
+        - pattern: ".*malicious_pattern.*"
+          reason: "Known attack vector"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Recommended Configurations
+
+### Development Environment
+
+```yaml
+security:
+  sensitivity: low
+  default_action: warn
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: false
+```
+
+### Staging Environment
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: warn
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+### Production Environment
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+<Warning>
+  Always test policy changes in a staging environment before applying to production.
+</Warning>
+
+## Monitoring and Tuning
+
+### Review Security Events
+
+Monitor logs to understand threat patterns:
+
+```bash
+# View blocked requests
+grep "BLOCKED" koreshield.log
+
+# View security warnings
+grep "WARN.*security" koreshield.log
+```
+
+### Adjust Based on Metrics
+
+<Steps>
+  <Step title="Collect Baseline Metrics">
+    Run in `warn` mode for 1-2 weeks to establish baseline threat patterns
+  </Step>
+  <Step title="Analyze False Positives">
+    Identify legitimate traffic being flagged and add to allowlists
+  </Step>
+  <Step title="Enable Blocking">
+    Switch to `block` mode after tuning allowlists
+  </Step>
+  <Step title="Monitor and Refine">
+    Continuously monitor metrics and adjust sensitivity as needed
+  </Step>
+</Steps>
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="What happens when a request is blocked?">
+    Blocked requests receive an HTTP 403 Forbidden response with a security message. The event is logged with details about the detected threat for monitoring and analysis.
+  </Accordion>
+
+  <Accordion title="Can I set different policies for different endpoints?">
+    Currently, KoreShield applies a global policy. Endpoint-specific policies are planned for future releases. Use custom rules in the detection engine for targeted behavior.
+  </Accordion>
+
+  <Accordion title="How do I test my policy configuration?">
+    Use test payloads with known attack patterns to verify detection:
+    1. Set `default_action: warn` temporarily
+    2. Send test requests with injection attempts
+    3. Check logs for detection events
+    4. Verify sanitization is working
+    5. Switch back to `block` mode
+  </Accordion>
+
+  <Accordion title="What's the performance impact of high sensitivity?">
+    High sensitivity performs more thorough checks, which may add 10-50ms latency per request. Monitor your `/metrics` endpoint to track actual performance impact.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Attack Detection" icon="radar" href="/features/attack-detection">
+    Learn about detection patterns and custom rules
+  </Card>
+  <Card title="General Settings" icon="gear" href="/configuration/settings">
+    Configure logging, providers, and monitoring
+  </Card>
+  <Card title="Production Checklist" icon="list-check" href="/configuration/production-checklist">
+    Pre-deployment security checklist
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/features/monitoring">
+    Monitor security events and metrics
+  </Card>
+</CardGroup>

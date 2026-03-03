@@ -1,0 +1,108 @@
+---
+title: Custom Models Integration
+description: Route any OpenAI-compatible API through KoreShield with streaming support.
+---
+
+# Custom Models Integration
+
+KoreShield can proxy any OpenAI-compatible API endpoint. This is useful for self-hosted models, gateways, or third-party providers that expose OpenAI-style endpoints.
+
+## Setup
+
+<Steps>
+  <Step title="Identify Your API">
+    Ensure your custom model API is OpenAI-compatible (supports `/v1/chat/completions`).
+  </Step>
+  
+  <Step title="Configure KoreShield">
+    Set up KoreShield proxy to route requests to your custom endpoint.
+  </Step>
+  
+  <Step title="Set Environment Variables">
+    Configure API keys and endpoints for your custom model.
+  </Step>
+</Steps>
+
+## Basic Request
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "your-model-name",
+    messages: [{ role: "user", content: "Summarize the audit log." }]
+  })
+});
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "your-model-name",
+        "messages": [{"role": "user", "content": "Summarize the audit log."}]
+    }
+)
+```
+</CodeGroup>
+
+## Streaming
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "your-model-name",
+    stream: true,
+    messages: [{ role: "user", content: "Generate a short summary." }]
+  })
+});
+```
+
+```python Python
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "your-model-name",
+        "stream": True,
+        "messages": [{"role": "user", "content": "Generate a short summary."}]
+    },
+    stream=True
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode("utf-8"))
+```
+</CodeGroup>
+
+## Compatibility Notes
+
+<Info>
+- The environment variable must match the provider name (uppercased + `_API_KEY`)
+- If the upstream API expects additional headers, configure them in your gateway or extend the provider adapter
+</Info>
+
+## Error Handling
+
+<Warning>
+- `403` indicates a blocked request due to policy enforcement
+- `429` or `5xx` typically indicates provider or rate-limit issues
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/docs/configuration">
+    Configure providers and security settings
+  </Card>
+  <Card title="OpenAI Integration" icon="openai" href="/integrations/models/openai">
+    Review OpenAI-compatible routing
+  </Card>
+</CardGroup>

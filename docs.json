@@ -1,122 +1,151 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "KoreShield",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2563eb",
+    "light": "#3b82f6",
+    "dark": "#1e40af"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/koreshield/koreshield-docs"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/koreshield/koreshield-docs"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "getting-started/installation",
+              "getting-started/quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/overview",
+              "features/rag-defense",
+              "features/attack-detection",
+              "features/security-policies"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Integrations",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "integrations/overview",
+              "integrations/models/openai",
+              "integrations/models/anthropic",
+              "integrations/models/deepseek",
+              "integrations/models/gemini",
+              "integrations/models/azure-openai",
+              "integrations/models/custom-models",
+              "integrations/frameworks/langchain",
+              "integrations/frameworks/llamaindex",
+              "integrations/frameworks/autogen",
+              "integrations/frameworks/nextjs",
+              "integrations/frameworks/fastapi",
+              "integrations/frameworks/django",
+              "integrations/frameworks/flask",
+              "integrations/frameworks/express",
+              "integrations/deployment/docker",
+              "integrations/deployment/kubernetes",
+              "integrations/deployment/aws",
+              "integrations/deployment/gcp",
+              "integrations/deployment/azure",
+              "integrations/deployment/railway"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/overview",
+              "configuration/policies",
+              "configuration/rate-limiting",
+              "configuration/settings",
+              "configuration/production-checklist"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/rag-security",
+              "advanced/tool-security",
+              "advanced/streaming",
+              "advanced/performance",
+              "advanced/compliance",
+              "advanced/troubleshooting"
+            ]
+          },
+          {
+            "group": "Best Practices",
+            "pages": [
+              "best-practices/error-handling",
+              "best-practices/caching"
+            ]
+          },
+          {
+            "group": "Compliance",
+            "pages": [
+              "compliance/gdpr",
+              "compliance/hipaa",
+              "compliance/dpa"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "API",
             "pages": [
-              "api-reference/introduction"
+              "api/overview",
+              "api/rest-api",
+              "api/cli"
             ]
-          },
+          }
+        ]
+      },
+      {
+        "tab": "Case Studies",
+        "groups": [
           {
-            "group": "Endpoint examples",
+            "group": "Use Cases",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "case-studies/overview",
+              "case-studies/ai-agents",
+              "case-studies/customer-service",
+              "case-studies/code-generation",
+              "case-studies/financial-services",
+              "case-studies/healthcare",
+              "case-studies/legal-tech",
+              "case-studies/ecommerce"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/overview"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

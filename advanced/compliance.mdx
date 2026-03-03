@@ -1,0 +1,337 @@
+---
+title: Compliance & Certifications
+description: Guide to meeting regulatory requirements with KoreShield (SOC2, HIPAA, GDPR)
+---
+
+# Compliance & Certifications
+
+KoreShield is designed to help organizations meet strict security and privacy standards. This guide outlines how our architecture supports compliance with major frameworks.
+
+<Info>
+KoreShield maintains SOC 2 Type II certification and provides features to help you meet HIPAA, GDPR, and PCI-DSS requirements.
+</Info>
+
+## SOC 2 Type II
+
+KoreShield creates an audit trail that is essential for SOC 2 controls.
+
+### Security Controls
+
+<CardGroup cols={3}>
+  <Card title="Access Control" icon="lock">
+    Role-Based Access Control (RBAC) ensures only authorized users can modify security policies.
+  </Card>
+  <Card title="Monitoring" icon="chart-line">
+    Real-time logging of all security events and policy violations.
+  </Card>
+  <Card title="Change Management" icon="rotate">
+    Versioned policy configurations allow for safe rollbacks and change tracking.
+  </Card>
+</CardGroup>
+
+### Audit Logging
+
+```typescript
+import { Koreshield } from 'Koreshield-sdk';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  auditLog: {
+    enabled: true,
+    retention: 90, // days
+    destination: 's3://compliance-logs/',
+  },
+});
+
+// All scans are automatically logged
+const scan = await koreshield.scan({
+  content: userInput,
+  userId: 'user-123',
+  metadata: {
+    requestId: 'req-456',
+    source: 'web-app',
+  },
+});
+```
+
+<Tip>
+Enable audit logging with a minimum 90-day retention period to meet SOC 2 requirements.
+</Tip>
+
+## HIPAA Compliance
+
+For healthcare organizations handling Protected Health Information (PHI).
+
+### PHI Protection
+
+- **Redaction**: Automatically detect and redact PHI (names, SSNs, medical record numbers) before data leaves your boundary
+- **Encryption**: All data is encrypted in transit (TLS 1.3) and at rest (AES-256)
+- **BAA**: Enterprise plans include a Business Associate Agreement (BAA)
+
+```typescript
+// Example: Configuring PHI Redaction
+const Koreshield = new Koreshield({
+  apiKey: process.env.KEY,
+  policy: {
+    pii: {
+      action: 'redact',
+      types: ['us_ssn', 'medical_record_number', 'patient_name']
+    }
+  }
+});
+
+const scan = await Koreshield.scan({
+  content: 'Patient John Doe, MRN: 12345, SSN: 123-45-6789',
+  redactPii: true,
+});
+
+// Result: "Patient [REDACTED], MRN: [REDACTED], SSN: [REDACTED]"
+```
+
+<Warning>
+HIPAA compliance requires a signed BAA. Contact our sales team to execute a BAA before processing PHI.
+</Warning>
+
+### Technical Safeguards
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(url, key);
+
+// Encryption at rest
+await supabase.from('patient_scans').insert({
+  patient_id: encryptId(patientId),
+  scan_result: encrypt(JSON.stringify(scan)),
+  timestamp: new Date(),
+});
+
+// Access logging
+await supabase.from('phi_access_log').insert({
+  user_id: userId,
+  resource: 'patient_scans',
+  action: 'read',
+  patient_id: patientId,
+  timestamp: new Date(),
+  ip_address: req.ip,
+});
+```
+
+## GDPR Considerations
+
+### Data Sovereignty
+
+<Info>
+KoreShield supports regional data residency to comply with GDPR data localization requirements.
+</Info>
+
+- **Region Locking**: Configure KoreShield to process data only within specific EU regions
+- **Right to Erasure**: API endpoints to delete all data associated with a specific user ID
+- **Data Minimization**: We strictly limit data retention periods based on your configuration
+
+```typescript
+// Configure EU region
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  region: 'eu-west-1',
+});
+
+// Right to erasure (GDPR Article 17)
+async function deleteUserData(userId: string) {
+  await koreshield.deleteUserData({
+    userId,
+    cascade: true, // Delete all associated data
+  });
+
+  console.log(`All data for user ${userId} has been deleted`);
+}
+
+// Data minimization
+const scan = await koreshield.scan({
+  content: userInput,
+  storeContent: false, // Don't store content, only scan results
+  retention: 30, // Auto-delete after 30 days
+});
+```
+
+### Privacy by Design
+
+```typescript
+// Minimal data collection
+const scan = await koreshield.scan({
+  content: userInput,
+  userId: hash(actualUserId), // Pseudonymization
+  metadata: {
+    // Only store necessary metadata
+    country: 'DE',
+    consentGiven: true,
+  },
+});
+
+// Anonymization for analytics
+const analytics = await koreshield.getAnalytics({
+  startDate: '2024-01-01',
+  endDate: '2024-01-31',
+  anonymize: true, // Remove all PII from results
+});
+```
+
+## PCI-DSS Requirements
+
+For handling payment card information.
+
+<Warning>
+Never log or store full credit card numbers. Use KoreShield's PCI masking to redact card data automatically.
+</Warning>
+
+```typescript
+// Configure PCI masking
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  policy: {
+    pii: {
+      action: 'redact',
+      types: ['credit_card', 'cvv', 'expiry_date'],
+    },
+  },
+});
+
+const scan = await koreshield.scan({
+  content: 'Please charge card 4111-1111-1111-1111 CVV 123',
+  redactPii: true,
+});
+
+// Result: "Please charge card [REDACTED] CVV [REDACTED]"
+```
+
+### Audit Logging for Cardholder Data
+
+```typescript
+// Log all access to cardholder data flows
+await supabase.from('pci_audit_log').insert({
+  user_id: userId,
+  action: 'scan_payment_content',
+  ip_address: req.ip,
+  timestamp: new Date(),
+  threat_detected: scan.threat_detected,
+  success: true,
+});
+```
+
+## FedRAMP (Government)
+
+KoreShield's GovCloud deployment option ensures:
+
+- **FIPS 140-2 Validated Encryption**
+- **US Persons Only Support**
+- **GovCloud Hosting**
+- **Continuous Monitoring**
+
+<Info>
+FedRAMP High package available for government agencies. Contact sales for availability and pricing.
+</Info>
+
+```typescript
+// GovCloud configuration
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_GOVCLOUD_KEY,
+  baseURL: 'https://gov.koreshield.com',
+  fipsMode: true,
+});
+```
+
+## Data Retention Policies
+
+```typescript
+// Configure retention periods
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  retention: {
+    scanResults: 90, // days
+    auditLogs: 365, // 1 year for compliance
+    metrics: 30, // days
+    content: 0, // Never store content
+  },
+});
+
+// Manual deletion
+async function enforceRetention() {
+  // Delete scans older than 90 days
+  await koreshield.deleteScans({
+    olderThan: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+  });
+}
+```
+
+## Compliance Reporting
+
+```typescript
+// Generate compliance report
+const report = await koreshield.generateComplianceReport({
+  startDate: '2024-01-01',
+  endDate: '2024-01-31',
+  frameworks: ['soc2', 'hipaa', 'gdpr'],
+  format: 'pdf',
+});
+
+// Save to secure storage
+await uploadToS3(report, 's3://compliance-reports/2024-01.pdf');
+```
+
+## Common Questions
+
+<AccordionGroup>
+  <Accordion title="Is KoreShield HIPAA compliant out of the box?">
+    KoreShield provides HIPAA-ready features (encryption, audit logging, PHI redaction) but requires:
+    1. Signed Business Associate Agreement (BAA)
+    2. Proper configuration of PHI redaction policies
+    3. Regular security assessments
+    4. Staff training on HIPAA requirements
+
+    Contact our sales team to execute a BAA.
+  </Accordion>
+
+  <Accordion title="How do I comply with GDPR's right to data portability?">
+    Use the data export API:
+    ```typescript
+    const userData = await koreshield.exportUserData({
+      userId: 'user-123',
+      format: 'json',
+    });
+    ```
+    This returns all data associated with the user in a machine-readable format.
+  </Accordion>
+
+  <Accordion title="What data does KoreShield store by default?">
+    By default, KoreShield stores:
+    - Scan results (threat type, confidence, timestamp)
+    - Metadata (user ID, request ID)
+    - Aggregated analytics
+
+    Content is **NOT** stored unless explicitly enabled with `storeContent: true`.
+  </Accordion>
+
+  <Accordion title="Can I self-host KoreShield for compliance reasons?">
+    Yes, enterprise customers can deploy on-premises or in private cloud using:
+    - Docker containers
+    - Kubernetes
+    - AWS/GCP/Azure private deployments
+
+    This ensures data never leaves your infrastructure. Contact sales for licensing.
+  </Accordion>
+
+  <Accordion title="How do I handle data breach notifications?">
+    KoreShield provides automated breach detection:
+    ```typescript
+    koreshield.on('potential_breach', async (event) => {
+      await notifySecurityTeam(event);
+      await notifyAffectedUsers(event.userIds);
+      await generateIncidentReport(event);
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Security Overview](/features/security-policies)

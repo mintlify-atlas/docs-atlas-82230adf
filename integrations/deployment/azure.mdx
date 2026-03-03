@@ -1,0 +1,161 @@
+---
+title: Azure Deployment
+description: Deploy the KoreShield proxy on Azure using Container Apps or VM Docker
+icon: microsoft
+---
+
+This guide covers Azure Container Apps for managed deployment and a VM-based Docker setup for more control.
+
+## Use Cases
+
+- Managed autoscaling for production traffic
+- Private networking with VNet integration
+- Fast pilot environments with minimal ops overhead
+
+## Architecture Choices
+
+- **Azure Container Apps** for managed ingress and autoscaling
+- **Azure VM + Docker** for full control and custom networking
+
+## Option A: Azure Container Apps
+
+<Steps>
+  <Step title="Build and Push an Image">
+    ```bash
+    # Build locally
+    docker build -t koreshield .
+
+    # Tag for Azure Container Registry
+    docker tag koreshield:latest &lt;registry-name&gt;.azurecr.io/koreshield:latest
+
+    # Push
+    az acr login --name &lt;registry-name&gt;
+    docker push &lt;registry-name&gt;.azurecr.io/koreshield:latest
+    ```
+  </Step>
+
+  <Step title="Create the Container App">
+    ```bash
+    az containerapp create \
+      --name koreshield \
+      --resource-group &lt;resource-group&gt; \
+      --environment &lt;env-name&gt; \
+      --image &lt;registry-name&gt;.azurecr.io/koreshield:latest \
+      --target-port 8000 \
+      --ingress external \
+      --env-vars OPENAI_API_KEY=your-api-key
+    ```
+  </Step>
+
+  <Step title="Configure Secrets (Recommended)">
+    Use secrets for API keys instead of inline env vars:
+
+    ```bash
+    az containerapp secret set \
+      --name koreshield \
+      --resource-group &lt;resource-group&gt; \
+      --secrets OPENAI_API_KEY=your-api-key
+    ```
+
+    Then reference the secret in your app configuration.
+  </Step>
+
+  <Step title="Verify Health">
+    ```bash
+    curl https://&lt;app-url&gt;/health
+    ```
+  </Step>
+</Steps>
+
+## Option B: Azure VM + Docker
+
+<Steps>
+  <Step title="Create a VM">
+    - Ubuntu 22.04 recommended
+    - Open inbound port 8000 or front with a reverse proxy
+  </Step>
+
+  <Step title="Install Docker">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install -y docker.io
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker $USER
+    ```
+  </Step>
+
+  <Step title="Run KoreShield">
+    ```bash
+    git clone https://github.com/koreshield/koreshield.git
+    cd koreshield/koreshield
+    cp config/config.example.yaml config/config.yaml
+
+    export OPENAI_API_KEY=your-api-key
+
+    docker build -t koreshield .
+
+    docker run -d \
+      -p 8000:8000 \
+      -e OPENAI_API_KEY=$OPENAI_API_KEY \
+      -v $(pwd)/config/config.yaml:/app/config/config.yaml \
+      koreshield
+    ```
+  </Step>
+</Steps>
+
+## Secrets and Config
+
+<Note>
+Use Azure Key Vault for production deployments to secure API keys and sensitive configuration.
+</Note>
+
+- Use Azure Key Vault for provider keys
+- Reference Key Vault secrets in Container Apps
+- Use `CONFIG_FILE` if you mount a custom config path
+
+## Networking and TLS
+
+- Terminate TLS with Azure Front Door or Application Gateway
+- Restrict ingress to trusted IPs or private endpoints
+- Use VNet integration for private services
+
+## Observability
+
+- Ship logs to Azure Monitor or Log Analytics
+- Enable `json_logs: true` for structured logs
+- Scrape `/metrics` with Prometheus or a managed monitor
+
+## Security Notes
+
+<Warning>
+Always use Azure Key Vault for API keys and enable managed identities where possible.
+</Warning>
+
+- Use Azure Key Vault for API keys
+- Enable `json_logs: true` and ship logs to Azure Monitor
+- Restrict inbound access to trusted networks
+
+## Troubleshooting
+
+<CodeGroup>
+```text Authentication
+401 responses: verify `KORESHIELD_API_KEY` header on clients
+```
+
+```text Container Apps
+Container Apps not starting: confirm image pull permissions for ACR
+```
+
+```text Timeouts
+Timeouts: increase ingress timeout and client timeouts for streaming
+```
+
+```text Provider Errors
+Provider errors: confirm Key Vault secrets are injected into the app
+```
+</CodeGroup>
+
+## Next Steps
+
+- Configure providers in [/configuration/](/configuration/overview)
+- Add monitoring in [../monitoring/prometheus.mdx](../monitoring/prometheus.mdx)

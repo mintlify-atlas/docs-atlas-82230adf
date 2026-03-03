@@ -1,0 +1,361 @@
+---
+title: Tool Security
+description: Security guidance for agent tools and function calls
+---
+
+# Tool Security
+
+Agent tools (functions) can access databases, files, and external APIs. This page outlines how to secure tools when routing requests through KoreShield.
+
+<Warning>
+Unsecured tool calling is a major attack vector. A single malicious tool invocation can lead to data exfiltration, unauthorized actions, or system compromise.
+</Warning>
+
+## Threat Model
+
+- **Prompt injection** that attempts to call unsafe tools
+- **Exfiltration** via tools that access sensitive data
+- **Tool misuse** through unvalidated arguments
+- **Cross-tenant data leakage** in multi-tenant systems
+
+<Info>
+KoreShield detects prompt injection attempts before they reach your tool layer, providing defense in depth.
+</Info>
+
+## Core Principles
+
+- **Allowlist tools only:** expose a minimal, explicit set of tools
+- **Validate inputs:** schema validation plus business rules
+- **Least privilege:** tools should only access required data
+- **Audit everything:** log tool calls, arguments, and outcomes
+
+## Recommended Controls
+
+### 1. Tool Allowlisting
+
+Keep a small list of approved tools. Reject any tool name that is not explicitly allowed.
+
+### 2. Argument Validation
+
+- Use strict JSON schema validation
+- Enforce length limits and safe character sets
+- Reject high-risk patterns (e.g., SQL injection sequences)
+
+### 3. Output Filtering
+
+- Strip secrets, tokens, and PII before returning results
+- Apply response safety checks on tool output
+
+### 4. Rate Limits
+
+- Apply per-user or per-tenant limits
+- Use Redis-backed rate limiting for consistency
+
+### 5. Human-in-the-Loop
+
+For high-impact actions (e.g., deleting data), require manual approval.
+
+## Example Tool Guard (TypeScript)
+
+```typescript
+const allowedTools = new Set(["search_database", "get_user_profile"]);
+
+function validateToolCall(name: string, args: Record<string, unknown>) {
+  if (!allowedTools.has(name)) {
+    throw new Error("Tool not allowed");
+  }
+
+  if (typeof args.query !== "string" || args.query.length > 200) {
+    throw new Error("Invalid query");
+  }
+}
+```
+
+## Example Tool Guard (Python)
+
+```python
+allowed_tools = {"search_database", "get_user_profile"}
+
+def validate_tool_call(name: str, args: dict) -> None:
+    if name not in allowed_tools:
+        raise ValueError("Tool not allowed")
+
+    query = args.get("query", "")
+    if not isinstance(query, str) or len(query) > 200:
+        raise ValueError("Invalid query")
+```
+
+<Tip>
+Combine KoreShield's prompt injection detection with strict tool allowlisting for maximum protection.
+</Tip>
+
+## Complete Tool Security Implementation
+
+```typescript
+import { Koreshield } from 'Koreshield-sdk';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+});
+
+const allowedTools = new Set([
+  'search_database',
+  'get_user_profile',
+  'create_ticket',
+]);
+
+interface ToolCall {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+async function secureToolExecution(
+  userMessage: string,
+  toolCall: ToolCall,
+  userId: string
+) {
+  // Step 1: Scan the user message for injection attempts
+  const scan = await koreshield.scan({
+    content: userMessage,
+    userId,
+    sensitivity: 'high',
+  });
+
+  if (scan.threat_detected) {
+    throw new Error(`Security threat detected: ${scan.threat_type}`);
+  }
+
+  // Step 2: Validate tool is allowed
+  if (!allowedTools.has(toolCall.name)) {
+    throw new Error(`Tool "${toolCall.name}" is not allowed`);
+  }
+
+  // Step 3: Validate arguments
+  validateToolArguments(toolCall.name, toolCall.arguments);
+
+  // Step 4: Execute with audit logging
+  const result = await executeToolWithAudit(toolCall, userId);
+
+  // Step 5: Filter sensitive data from response
+  return sanitizeToolResponse(result);
+}
+
+function validateToolArguments(
+  toolName: string,
+  args: Record<string, unknown>
+) {
+  switch (toolName) {
+    case 'search_database':
+      if (typeof args.query !== 'string' || args.query.length > 200) {
+        throw new Error('Invalid query parameter');
+      }
+      // Prevent SQL injection patterns
+      if (/(['"`;]|--|\/\*)/i.test(args.query)) {
+        throw new Error('Unsafe characters in query');
+      }
+      break;
+
+    case 'get_user_profile':
+      if (typeof args.userId !== 'string' || !isValidUserId(args.userId)) {
+        throw new Error('Invalid userId parameter');
+      }
+      break;
+
+    case 'create_ticket':
+      if (typeof args.title !== 'string' || args.title.length > 100) {
+        throw new Error('Invalid title parameter');
+      }
+      break;
+
+    default:
+      throw new Error(`Unknown tool: ${toolName}`);
+  }
+}
+
+async function executeToolWithAudit(
+  toolCall: ToolCall,
+  userId: string
+) {
+  // Log the tool call
+  await logToolCall({
+    userId,
+    toolName: toolCall.name,
+    arguments: toolCall.arguments,
+    timestamp: new Date(),
+  });
+
+  // Execute the actual tool logic
+  const result = await executeTool(toolCall);
+
+  // Log the result
+  await logToolResult({
+    userId,
+    toolName: toolCall.name,
+    success: true,
+    timestamp: new Date(),
+  });
+
+  return result;
+}
+
+function sanitizeToolResponse(result: any) {
+  // Remove sensitive fields
+  const sensitiveFields = [
+    'password',
+    'apiKey',
+    'secret',
+    'token',
+    'ssn',
+    'creditCard',
+  ];
+
+  if (typeof result === 'object' && result !== null) {
+    const sanitized = { ...result };
+    sensitiveFields.forEach(field => {
+      if (field in sanitized) {
+        delete sanitized[field];
+      }
+    });
+    return sanitized;
+  }
+
+  return result;
+}
+```
+
+## Policy Alignment
+
+```yaml
+security:
+  sensitivity: high
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+<Info>
+Set `default_action: block` for high-risk environments to fail closed on any detected threats.
+</Info>
+
+## Rate Limiting for Tools
+
+```typescript
+import Redis from 'ioredis';
+
+const redis = new Redis(process.env.REDIS_URL);
+
+async function rateLimitTool(
+  userId: string,
+  toolName: string,
+  maxCalls: number = 10,
+  windowSeconds: number = 60
+) {
+  const key = `tool_limit:${userId}:${toolName}`;
+  const current = await redis.incr(key);
+
+  if (current === 1) {
+    await redis.expire(key, windowSeconds);
+  }
+
+  if (current > maxCalls) {
+    throw new Error(
+      `Rate limit exceeded for ${toolName}. Max ${maxCalls} calls per ${windowSeconds}s`
+    );
+  }
+
+  return current;
+}
+```
+
+## Human-in-the-Loop for High-Risk Actions
+
+```typescript
+const highRiskTools = new Set(['delete_data', 'transfer_funds', 'grant_access']);
+
+async function executeWithApproval(
+  toolCall: ToolCall,
+  userId: string
+) {
+  if (highRiskTools.has(toolCall.name)) {
+    // Create approval request
+    const approvalId = await createApprovalRequest({
+      userId,
+      toolName: toolCall.name,
+      arguments: toolCall.arguments,
+    });
+
+    // Notify administrators
+    await notifyAdmins(approvalId);
+
+    // Return pending status
+    return {
+      status: 'pending_approval',
+      approvalId,
+      message: 'This action requires administrator approval',
+    };
+  }
+
+  // Execute non-risky tools immediately
+  return await executeTool(toolCall);
+}
+```
+
+## Observability
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(url, key);
+
+async function logToolCall(data: ToolCallLog) {
+  await supabase.from('tool_calls').insert({
+    user_id: data.userId,
+    tool_name: data.toolName,
+    arguments: data.arguments,
+    timestamp: data.timestamp,
+  });
+}
+
+async function getToolStats(userId: string, timeRange: string = '24h') {
+  const { data, error } = await supabase
+    .from('tool_calls')
+    .select('tool_name, count')
+    .eq('user_id', userId)
+    .gte('timestamp', getTimeRangeStart(timeRange))
+    .group('tool_name');
+
+  return data;
+}
+```
+
+<Tip>
+Log every tool call with request ID and user ID for security auditing and compliance.
+</Tip>
+
+## Common Questions
+
+<AccordionGroup>
+  <Accordion title="How do I handle dynamic tool arguments?">
+    Use JSON Schema validation with strict type checking. Define schemas for each tool and validate arguments before execution. Consider using libraries like `ajv` for robust validation.
+  </Accordion>
+
+  <Accordion title="Should I scan tool responses as well as inputs?">
+    Yes, especially if tools return user-generated content or data from external sources. Scan responses for sensitive data before returning them to the LLM.
+  </Accordion>
+
+  <Accordion title="What's the best way to implement tool permissions?">
+    Use RBAC (Role-Based Access Control) with tool allowlists per role. Store permissions in your database and check them before tool execution.
+  </Accordion>
+
+  <Accordion title="How do I test tool security?">
+    Write tests that attempt common injection patterns, unauthorized tool calls, and invalid arguments. Use KoreShield's test mode to validate security without blocking.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Attack Detection](/features/attack-detection)
+- [Security Policies](/configuration/policies)
+- [Rate Limiting](/configuration/rate-limiting)

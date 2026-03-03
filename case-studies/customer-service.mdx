@@ -1,0 +1,153 @@
+---
+title: Customer Service Chatbots
+description: Deploying safe and reliable public-facing support bots
+---
+
+# Customer Service Chatbots
+
+How a global SaaS company secured a high-volume support bot without sacrificing deflection rates.
+
+## Challenge
+
+The support team used an AI chatbot to resolve tier-1 requests:
+
+- Billing and subscription questions
+- Account recovery and access issues
+- Product troubleshooting
+
+<Warning>
+**Critical Requirements**
+- Prevent jailbreaks that expose internal policies
+- Avoid sensitive data exposure in public channels
+- Maintain response quality across millions of chats
+</Warning>
+
+## Solution
+
+KoreShield scanned incoming messages and applied policy enforcement before any model call. Risky requests were routed to human agents.
+
+```typescript
+import { Koreshield } from "koreshield-sdk";
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  sensitivity: "medium",
+});
+
+async function secureSupportChat(userId: string, message: string) {
+  const scan = await koreshield.scan({
+    content: message,
+    userId,
+    metadata: { channel: "support", tier: "public" },
+  });
+
+  if (scan.threat_detected) {
+    return {
+      handoff: true,
+      reason: scan.threat_type,
+    };
+  }
+
+  return await respondWithBot(message);
+}
+```
+
+## Threat Model
+
+The team focused on common public-channel risks:
+
+<CardGroup cols={2}>
+  <Card title="Jailbreaks" icon="unlock">
+    Requests for internal policies or system prompts
+  </Card>
+  <Card title="Impersonation" icon="user-secret">
+    Account reset attempts without verification
+  </Card>
+  <Card title="Prompt Injection" icon="syringe">
+    Malicious content in attachments or chat history
+  </Card>
+  <Card title="Data Disclosure" icon="eye-slash">
+    Requests to disclose private customer data
+  </Card>
+</CardGroup>
+
+## Operational Controls
+
+<Steps>
+  <Step title="PII Masking">
+    Redacted emails, addresses, and account IDs from logs and outputs
+  </Step>
+  <Step title="Policy Scopes">
+    Separate rules for billing, security, and product support
+  </Step>
+  <Step title="Safe Response Templates">
+    Constrained output for high-risk topics
+  </Step>
+  <Step title="Escalation">
+    Automatic human handoff for blocked or ambiguous intents
+  </Step>
+</Steps>
+
+## Routing and Escalation
+
+<Tabs>
+  <Tab title="Tiered Workflows">
+    Low-risk intents stayed with the bot for faster resolution
+  </Tab>
+  <Tab title="Verification Gates">
+    Account changes required verified sessions and 2FA
+  </Tab>
+  <Tab title="Human Review">
+    Security-sensitive prompts were queued for live agents
+  </Tab>
+</Tabs>
+
+## Quality and Safety Loop
+
+Weekly reviews of blocked requests helped adjust sensitivity and reduce false positives. The team also maintained a small allowlist of brand-safe phrases for common billing questions.
+
+<Note>
+**Best Practice**: Regular review cycles help balance security with user experience. Start conservative and tune based on real-world data.
+</Note>
+
+## Results
+
+<CardGroup cols={3}>
+  <Card title="Reduced Incidents" icon="shield-check">
+    Eliminated prompt-injection incidents in public channels
+  </Card>
+  <Card title="Better Handoffs" icon="hand-holding-hand">
+    Improved agent handoff accuracy for sensitive issues
+  </Card>
+  <Card title="High Deflection" icon="chart-line">
+    Maintained deflection rates without compromising safety
+  </Card>
+</CardGroup>
+
+## Implementation Tips
+
+<AccordionGroup>
+  <Accordion title="Start with High Sensitivity">
+    Begin with stricter policies and relax based on false positive analysis. It's easier to loosen controls than recover from a security incident.
+  </Accordion>
+  <Accordion title="Monitor Handoff Rates">
+    Track the percentage of conversations escalated to humans. Sudden spikes may indicate policy issues or new attack patterns.
+  </Accordion>
+  <Accordion title="Create Feedback Loops">
+    Have human agents flag incorrect bot responses to improve both the model and security policies over time.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={3}>
+  <Card title="Security" icon="shield" href="/features/security-policies">
+    Threat detection features
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/configuration/rate-limiting">
+    Configure usage limits
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/integrations/monitoring">
+    Set up alerts
+  </Card>
+</CardGroup>

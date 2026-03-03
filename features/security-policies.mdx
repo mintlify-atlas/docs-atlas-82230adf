@@ -1,0 +1,346 @@
+---
+title: Security Policies
+description: Configurable policies for threat response and enforcement
+icon: gavel
+---
+
+# Security Policies
+
+KoreShield secures LLM traffic by combining sanitization, detection, and policy enforcement in a single proxy layer. This keeps provider API keys server-side and applies the same safeguards to every request.
+
+## Core Capabilities
+
+KoreShield provides comprehensive security through:
+
+<CardGroup cols={2}>
+  <Card title="Input Sanitization" icon="broom">
+    Remove unsafe content patterns before they reach the LLM
+  </Card>
+  
+  <Card title="Threat Detection" icon="radar">
+    Multi-layered detection with keyword rules and pattern analysis
+  </Card>
+  
+  <Card title="Policy Enforcement" icon="shield-check">
+    Configurable actions: allow, warn, or block detected threats
+  </Card>
+  
+  <Card title="Audit Logging" icon="file-lines">
+    Comprehensive logging and metrics for monitoring and compliance
+  </Card>
+</CardGroup>
+
+## How It Works
+
+<Steps>
+  <Step title="Request enters KoreShield proxy">
+    All LLM requests are routed through the KoreShield security layer.
+  </Step>
+  
+  <Step title="Content sanitization and scanning">
+    Input is sanitized and scanned for security threats using multiple detection layers.
+  </Step>
+  
+  <Step title="Policy decision">
+    Configured policies determine whether to allow, warn, or block based on threat severity.
+  </Step>
+  
+  <Step title="Forward or block">
+    Allowed traffic is forwarded to the configured LLM provider. Blocked requests return an error.
+  </Step>
+  
+  <Step title="Audit logging">
+    All requests and policy decisions are logged for monitoring and compliance.
+  </Step>
+</Steps>
+
+## Configure Security Defaults
+
+Set default security policies in your configuration:
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+<ParamField path="sensitivity" type="string" default="medium">
+  Detection sensitivity level:
+  - `high` - Strict enforcement, best for regulated workloads
+  - `medium` - Balanced defaults for most production use
+  - `low` - Lenient mode for experimentation
+</ParamField>
+
+<ParamField path="default_action" type="string" default="warn">
+  Default action for detected threats:
+  - `allow` - Log but don't block (monitoring only)
+  - `warn` - Log and add warning header, but allow request
+  - `block` - Reject the request and return error
+</ParamField>
+
+<ParamField path="features" type="object">
+  Enable/disable specific security features:
+  - `sanitization` - Input cleaning and normalization
+  - `detection` - Threat detection engine
+  - `policy_enforcement` - Apply configured policies
+</ParamField>
+
+## Sensitivity Levels
+
+<Tabs>
+  <Tab title="High">
+    **Best for:**
+    - Healthcare (HIPAA)
+    - Financial services (PCI-DSS)
+    - Public-facing chatbots
+    - Regulated industries
+
+    **Behavior:**
+    - Strict detection thresholds
+    - Lower confidence scores trigger blocks
+    - More false positives
+    - Maximum security
+
+    ```yaml
+    security:
+      sensitivity: high
+      default_action: block
+    ```
+  </Tab>
+  
+  <Tab title="Medium">
+    **Best for:**
+    - Most production applications
+    - General-purpose LLM integrations
+    - Balanced security and usability
+
+    **Behavior:**
+    - Balanced detection thresholds
+    - Moderate confidence requirements
+    - Reasonable false positive rate
+    - Recommended default
+
+    ```yaml
+    security:
+      sensitivity: medium
+      default_action: warn
+    ```
+  </Tab>
+  
+  <Tab title="Low">
+    **Best for:**
+    - Development environments
+    - Internal tools
+    - Trusted user base
+    - Low-risk applications
+
+    **Behavior:**
+    - Permissive detection
+    - Higher confidence required
+    - Fewer false positives
+    - Focus on obvious threats
+
+    ```yaml
+    security:
+      sensitivity: low
+      default_action: allow
+    ```
+  </Tab>
+</Tabs>
+
+## Action Types
+
+### Allow
+
+Log the threat but allow the request to proceed:
+
+```yaml
+security:
+  default_action: allow
+```
+
+**Use when:**
+- Testing new detection rules
+- Monitoring only mode
+- Building baseline metrics
+
+### Warn
+
+Log the threat, add a warning header, but allow the request:
+
+```yaml
+security:
+  default_action: warn
+```
+
+**Use when:**
+- Gradual rollout of security policies
+- You want visibility without blocking users
+- Collecting data for tuning
+
+**Response includes:**
+```http
+X-KoreShield-Warning: threat_detected
+X-KoreShield-Threat-Type: prompt_injection
+X-KoreShield-Confidence: 0.85
+```
+
+### Block
+
+Reject the request and return an error:
+
+```yaml
+security:
+  default_action: block
+```
+
+**Use when:**
+- Production security enforcement
+- High-risk or regulated environments
+- Protecting sensitive data
+
+**Response:**
+```json
+{
+  "error": {
+    "message": "Request blocked: prompt injection detected",
+    "type": "security_violation",
+    "code": "prompt_injection",
+    "confidence": 0.92
+  }
+}
+```
+
+## Per-Environment Configuration
+
+<CodeGroup>
+```yaml Development
+security:
+  sensitivity: low
+  default_action: allow
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: false
+```
+
+```yaml Staging
+security:
+  sensitivity: medium
+  default_action: warn
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+```yaml Production
+security:
+  sensitivity: high
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+</CodeGroup>
+
+## Operational Tips
+
+<Accordion title="Use structured logging">
+  Enable `json_logs: true` in production for structured logs that integrate with your monitoring stack.
+  
+  ```yaml
+  logging:
+    json_logs: true
+    level: info
+  ```
+</Accordion>
+
+<Accordion title="Enable Redis for distributed systems">
+  Use Redis for distributed rate limiting and centralized statistics:
+  
+  ```yaml
+  redis:
+    url: redis://localhost:6379/0
+  ```
+</Accordion>
+
+<Accordion title="Protect the proxy with API keys">
+  Require authentication to access the KoreShield proxy:
+  
+  ```bash
+  export KORESHIELD_API_KEY=ks_prod_your_secure_key
+  ```
+</Accordion>
+
+<Accordion title="Monitor security metrics">
+  Track key metrics:
+  - Request volume
+  - Threat detection rate
+  - False positive rate
+  - Response latency
+  
+  Available at `/metrics` endpoint (Prometheus format)
+</Accordion>
+
+## Custom Policies
+
+Define custom policies for specific threat types:
+
+```yaml
+policies:
+  - name: "block_data_exfiltration"
+    pattern: "(send|upload|email).*to"
+    severity: critical
+    action: block
+    
+  - name: "warn_role_manipulation"
+    pattern: "you are now"
+    severity: high
+    action: warn
+```
+
+## Allowlists and Blocklists
+
+Override detection for known patterns:
+
+```yaml
+allowlist:
+  - "system prompt for debugging"
+  - "show configuration"
+
+blocklist:
+  - "DAN mode"
+  - "developer override"
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Attack Detection" icon="radar" href="/features/attack-detection">
+    Learn about detection layers and tuning
+  </Card>
+  
+  <Card title="Configuration Guide" icon="sliders" href="/configuration/policies">
+    Complete policy configuration reference
+  </Card>
+  
+  <Card title="Compliance" icon="shield-check" href="/advanced/compliance">
+    HIPAA, GDPR, and SOC 2 compliance
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line" href="/configuration/settings">
+    Set up monitoring and alerting
+  </Card>
+</CardGroup>
+
+## Related Documentation
+
+- [Attack Detection](/features/attack-detection) - Detection engine details
+- [Configuration Settings](/configuration/settings) - Complete configuration reference
+- [Production Checklist](/configuration/production-checklist) - Security best practices

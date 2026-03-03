@@ -1,0 +1,313 @@
+---
+title: DeepSeek Integration
+description: Integrate KoreShield with DeepSeek for secure AI applications.
+---
+
+# DeepSeek Integration
+
+Protect your DeepSeek-powered applications from prompt injection and security threats.
+
+## Installation
+
+<CodeGroup>
+```bash pip
+pip install koreshield-sdk openai  # DeepSeek uses OpenAI-compatible API
+```
+</CodeGroup>
+
+<Info>
+DeepSeek uses an OpenAI-compatible API, so you can use the OpenAI Python SDK with a custom base URL.
+</Info>
+
+## Setup
+
+<Steps>
+  <Step title="Get API Keys">
+    Obtain your DeepSeek API key from the DeepSeek platform and your KoreShield API key.
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install the KoreShield SDK and OpenAI library.
+  </Step>
+  
+  <Step title="Configure Client">
+    Set up the OpenAI client with DeepSeek's base URL.
+  </Step>
+</Steps>
+
+## Basic Integration
+
+```python
+from koreshield_sdk import Koreshield
+from openai import OpenAI
+
+koreshield = Koreshield(api_key="ks_live_xxxxxxxxxxxx")
+
+client = OpenAI(
+    api_key="your_deepseek_api_key",
+    base_url="https://api.deepseek.com"
+)
+
+def secure_deepseek_chat(user_message: str) -> str:
+    # Scan input
+    scan = koreshield.scan(content=user_message, user_id="user-123")
+    
+    if scan.threat_detected:
+        raise ValueError(f"Threat detected: {scan.threat_type}")
+    
+    # Call DeepSeek
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": user_message}]
+    )
+    
+    return response.choices[0].message.content
+```
+
+## Proxy Mode
+
+```python
+client = OpenAI(
+    api_key="your_deepseek_api_key",
+    base_url="https://api.koreshield.com/v1/proxy/deepseek",
+    default_headers={
+        "X-Koreshield-API-Key": "ks_live_xxxxxxxxxxxx"
+    }
+)
+
+# Automatic protection
+response = client.chat.completions.create(
+    model="deepseek-chat",
+    messages=[{"role": "user", "content": user_message}]
+)
+```
+
+## DeepSeek Coder
+
+```python
+def secure_code_generation(prompt: str) -> str:
+    # Scan prompt
+    scan = koreshield.scan(content=prompt)
+    
+    if scan.threat_detected:
+        raise ValueError("Threat detected in code prompt")
+    
+    response = client.chat.completions.create(
+        model="deepseek-coder",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4096
+    )
+    
+    return response.choices[0].message.content
+```
+
+## Streaming
+
+```python
+def secure_stream(user_message: str):
+    # Scan first
+    scan = koreshield.scan(content=user_message)
+    
+    if scan.threat_detected:
+        raise ValueError("Threat detected")
+    
+    # Stream response
+    stream = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": user_message}],
+        stream=True
+    )
+    
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            print(chunk.choices[0].delta.content, end="")
+```
+
+## Function Calling
+
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_code",
+            "description": "Search codebase",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"]
+            }
+        }
+    }
+]
+
+def secure_function_call(user_message: str):
+    # Scan message
+    scan = koreshield.scan(content=user_message)
+    
+    if scan.threat_detected:
+        raise ValueError("Threat detected")
+    
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": user_message}],
+        tools=tools
+    )
+    
+    tool_call = response.choices[0].message.tool_calls[0] if response.choices[0].message.tool_calls else None
+    
+    if tool_call:
+        # Scan function arguments
+        args_scan = koreshield.scan(content=tool_call.function.arguments)
+        
+        if args_scan.threat_detected:
+            raise ValueError("Malicious function arguments")
+        
+        # Execute function
+        result = execute_search(tool_call.function.arguments)
+        return result
+```
+
+## FastAPI Integration
+
+```python
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class ChatRequest(BaseModel):
+    message: str
+    model: str = "deepseek-chat"
+
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    try:
+        # Scan with KoreShield
+        scan = koreshield.scan(content=request.message)
+        
+        if scan.threat_detected:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Security threat: {scan.threat_type}"
+            )
+        
+        # Call DeepSeek
+        response = client.chat.completions.create(
+            model=request.model,
+            messages=[{"role": "user", "content": request.message}]
+        )
+        
+        return {"response": response.choices[0].message.content}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Multi-Turn Conversations
+
+```python
+def secure_conversation(messages: list[dict], new_message: str) -> str:
+    # Scan new message
+    scan = koreshield.scan(content=new_message)
+    
+    if scan.threat_detected:
+        raise ValueError("Threat detected")
+    
+    # Build conversation
+    all_messages = messages + [{"role": "user", "content": new_message}]
+    
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=all_messages
+    )
+    
+    return response.choices[0].message.content
+```
+
+## Temperature & Top-P
+
+```python
+def secure_with_params(user_message: str, temperature: float = 0.7) -> str:
+    scan = koreshield.scan(content=user_message)
+    
+    if scan.threat_detected:
+        raise ValueError("Threat detected")
+    
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=[{"role": "user", "content": user_message}],
+        temperature=temperature,
+        top_p=0.9
+    )
+    
+    return response.choices[0].message.content
+```
+
+## Batch Processing
+
+```python
+def secure_batch(messages: list[str]) -> list[str]:
+    # Scan all messages
+    scans = koreshield.batch_scan(
+        items=[{"id": str(i), "content": msg} for i, msg in enumerate(messages)]
+    )
+    
+    threats = [s for s in scans.results if s.threat_detected]
+    
+    if threats:
+        print(f"Filtered {len(threats)} threats")
+    
+    # Process safe messages
+    safe_messages = [msg for i, msg in enumerate(messages) 
+                     if not scans.results[i].threat_detected]
+    
+    responses = []
+    for msg in safe_messages:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": msg}]
+        )
+        responses.append(response.choices[0].message.content)
+    
+    return responses
+```
+
+## LangChain Integration
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain.callbacks.base import BaseCallbackHandler
+
+class KoreshieldCallback(BaseCallbackHandler):
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        for prompt in prompts:
+            scan = koreshield.scan(content=prompt)
+            if scan.threat_detected:
+                raise ValueError(f"Threat detected: {scan.threat_type}")
+
+llm = ChatOpenAI(
+    model="deepseek-chat",
+    openai_api_key="your_deepseek_api_key",
+    openai_api_base="https://api.deepseek.com",
+    callbacks=[KoreshieldCallback()]
+)
+
+response = llm.invoke("Tell me about Python")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Python SDK" icon="python" href="https://github.com/koreshield/koreshield/tree/main/koreshield-python-sdk">
+    Explore the Python SDK
+  </Card>
+  <Card title="OpenAI Integration" icon="openai" href="/integrations/models/openai">
+    Learn about OpenAI integration
+  </Card>
+  <Card title="LangChain Integration" icon="link" href="/docs/integrations/frameworks/langchain">
+    Integrate with LangChain
+  </Card>
+</CardGroup>

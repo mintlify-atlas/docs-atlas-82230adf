@@ -1,0 +1,195 @@
+---
+title: Code Generation Security
+description: Preventing malicious code injection and secret leakage in coding assistants
+---
+
+# Code Generation Security
+
+How a developer platform secured AI code completion and refactoring at scale without slowing teams down.
+
+## Challenge
+
+An engineering organization rolled out an AI coding assistant to:
+
+- Generate boilerplate and tests
+- Refactor legacy services
+- Draft infrastructure changes
+
+<Warning>
+**Critical Requirements**
+- Block insecure code patterns (RCE, SSRF, deserialization)
+- Prevent secret leakage in prompts and outputs
+- Ensure generated code respects internal policies
+- Maintain developer velocity
+</Warning>
+
+## Solution
+
+KoreShield scanned both prompts and model outputs. Suspicious requests were blocked, and risky outputs were flagged for review.
+
+```typescript
+import { Koreshield } from 'koreshield-sdk';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  sensitivity: 'high',
+});
+
+async function secureCodeGen(request: string) {
+  const inputScan = await koreshield.scan({
+    content: request,
+    metadata: { domain: 'code-gen', repo: 'core-platform' },
+  });
+
+  if (inputScan.threat_detected) {
+    return { error: 'Blocked unsafe request' };
+  }
+
+  const output = await generateCode(request);
+
+  const outputScan = await koreshield.scan({
+    content: output,
+    metadata: { domain: 'code-gen', output: true },
+  });
+
+  if (outputScan.threat_detected) {
+    return { error: 'Generated code failed security checks' };
+  }
+
+  return { output };
+}
+```
+
+## Threat Model
+
+The security team focused on:
+
+<CardGroup cols={2}>
+  <Card title="Prompt Injection" icon="syringe">
+    Requests for secrets or internal code
+  </Card>
+  <Card title="Unsafe Patterns" icon="triangle-exclamation">
+    Command injection, SSRF, crypto misuse
+  </Card>
+  <Card title="Licensing Violations" icon="copyright">
+    Code snippets with incompatible licenses
+  </Card>
+  <Card title="Data Exfiltration" icon="download">
+    Scripts that leak data to external endpoints
+  </Card>
+</CardGroup>
+
+## Secure-by-Default Controls
+
+<Steps>
+  <Step title="Secret Redaction">
+    Removed API keys and tokens before logging or processing
+  </Step>
+  <Step title="Unsafe Pattern Checks">
+    Blocked code with known exploit signatures (SQL injection, command execution)
+  </Step>
+  <Step title="Policy Scopes">
+    Enforced repo-specific constraints and security requirements
+  </Step>
+  <Step title="Review Gates">
+    Flagged high-risk outputs for security review before merge
+  </Step>
+</Steps>
+
+## CI and Developer Workflow
+
+<Tabs>
+  <Tab title="Pre-Commit Checks">
+    Optional scan on generated diffs before commit
+    
+    ```bash
+    # .git/hooks/pre-commit
+    koreshield scan --diff
+    ```
+  </Tab>
+  <Tab title="IDE Integration">
+    Warnings inline for risky suggestions
+    
+    ```typescript
+    // Warning: Potential SQL injection
+    const query = `SELECT * FROM users WHERE id = ${userId}`;
+    ```
+  </Tab>
+  <Tab title="Sandbox Execution">
+    Generated code executed in isolated test runners
+    
+    ```yaml
+    # .github/workflows/test.yml
+    - name: Run in sandbox
+      run: docker run --rm --network=none test-runner
+    ```
+  </Tab>
+</Tabs>
+
+## Example: Detecting Unsafe Code
+
+<CodeGroup>
+```typescript Blocked: Command Injection
+// KoreShield blocks this pattern
+const file = req.query.filename;
+exec(`cat ${file}`); // ❌ Command injection risk
+```
+
+```typescript Allowed: Safe Alternative
+// KoreShield allows this pattern
+const file = path.basename(req.query.filename);
+fs.readFile(file, 'utf8'); // ✅ Safe file access
+```
+</CodeGroup>
+
+## Results
+
+<CardGroup cols={3}>
+  <Card title="Fewer Vulnerabilities" icon="shield-check">
+    Reduced vulnerable code suggestions in production repos
+  </Card>
+  <Card title="Low Latency" icon="bolt">
+    Maintained code-assist latency targets with minimal overhead
+  </Card>
+  <Card title="Audit Trail" icon="clipboard-check">
+    Centralized audit trail for compliance and change control
+  </Card>
+</CardGroup>
+
+## Lessons Learned
+
+<Note>
+**Key Insights**
+- Output scanning is critical for guarding against novel exploit patterns
+- Keeping policies repo-specific improves developer trust
+- Review gates should be rare and explainable to avoid friction
+- False positives hurt adoption - tune aggressively based on feedback
+</Note>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Scan Both Inputs and Outputs">
+    While input scanning catches malicious prompts, output scanning is essential for detecting vulnerabilities in generated code that may slip through.
+  </Accordion>
+  <Accordion title="Context-Aware Policies">
+    Different repos have different risk profiles. A startup's internal tool needs different policies than a payment processing service.
+  </Accordion>
+  <Accordion title="Fast Feedback Loops">
+    Integrate scanning into the IDE and CI/CD pipeline so developers get immediate feedback, not days later in security review.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={3}>
+  <Card title="Attack Detection" icon="radar" href="/features/attack-detection">
+    Learn about threat patterns
+  </Card>
+  <Card title="Security" icon="shield" href="/features/security-policies">
+    Security best practices
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure policies
+  </Card>
+</CardGroup>

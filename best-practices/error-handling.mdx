@@ -1,0 +1,497 @@
+---
+title: Error Handling Best Practices
+description: Error handling patterns for reliable and secure LLM applications
+---
+
+# Error Handling Best Practices
+
+Reliable error handling protects your users, prevents data leakage, and keeps systems stable under load. This guide focuses on safe patterns for LLM proxy and security middleware workflows.
+
+<Info>
+Proper error handling is critical for security. Never expose internal errors, prompts, or system details to end users.
+</Info>
+
+## Error Categories
+
+<CardGroup cols={2}>
+  <Card title="Input Validation" icon="check">
+    Invalid request shape, missing fields, malformed data
+  </Card>
+  <Card title="Security Policy" icon="shield">
+    Blocked content, unsafe requests, policy violations
+  </Card>
+  <Card title="Provider Errors" icon="server">
+    Upstream model timeouts, API failures, quota exceeded
+  </Card>
+  <Card title="Infrastructure" icon="network-wired">
+    Network issues, database failures, dependency outages
+  </Card>
+</CardGroup>
+
+## Recommended Patterns
+
+### 1. Fail Closed for Unsafe Requests
+
+If a security check fails, block the request and return a safe message. Do not forward unsafe content to providers.
+
+```typescript
+import { Koreshield } from 'Koreshield-sdk';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+});
+
+async function secureCompletion(userMessage: string) {
+  try {
+    // Scan for threats
+    const scan = await koreshield.scan({
+      content: userMessage,
+      sensitivity: 'high',
+    });
+
+    if (scan.threat_detected) {
+      // FAIL CLOSED: Block the request
+      return {
+        error: 'Your request was blocked for security reasons.',
+        code: 'SECURITY_VIOLATION',
+        // DO NOT expose: scan.threat_type, scan.patterns
+      };
+    }
+
+    // Safe to proceed
+    return await callLLM(userMessage);
+  } catch (error) {
+    // FAIL CLOSED: On scanning errors, block the request
+    console.error('Security scan failed:', error);
+    return {
+      error: 'Unable to process your request. Please try again.',
+      code: 'SCAN_ERROR',
+    };
+  }
+}
+```
+
+<Warning>
+Never fail open on security errors. If KoreShield is unavailable, either block requests or use cached policies as fallback.
+</Warning>
+
+### 2. Use Stable Error Codes
+
+Return consistent error types so clients can handle them predictably.
+
+```typescript
+enum ErrorCode {
+  SECURITY_VIOLATION = 'SECURITY_VIOLATION',
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+  INVALID_INPUT = 'INVALID_INPUT',
+  PROVIDER_ERROR = 'PROVIDER_ERROR',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+}
+
+interface ApiError {
+  code: ErrorCode;
+  message: string;
+  retryable: boolean;
+  retryAfter?: number;
+}
+
+function createError(
+  code: ErrorCode,
+  message: string,
+  retryable: boolean = false
+): ApiError {
+  return { code, message, retryable };
+}
+
+// Usage
+if (scan.threat_detected) {
+  throw createError(
+    ErrorCode.SECURITY_VIOLATION,
+    'Request blocked for security reasons',
+    false // Not retryable
+  );
+}
+```
+
+### 3. Retry with Backoff
+
+For transient provider or network errors, use exponential backoff. Do not retry on policy violations.
+
+```typescript
+import pRetry from 'p-retry';
+
+async function resilientScan(content: string) {
+  return pRetry(
+    async () => {
+      const scan = await koreshield.scan({ content });
+
+      // Don't retry security violations
+      if (scan.threat_detected) {
+        throw new pRetry.AbortError('Security violation');
+      }
+
+      return scan;
+    },
+    {
+      retries: 3,
+      factor: 2,
+      minTimeout: 1000,
+      maxTimeout: 5000,
+      onFailedAttempt: (error) => {
+        // Only retry network/server errors
+        if (error.response?.status === 429 || error.response?.status >= 500) {
+          console.log(`Retry attempt ${error.attemptNumber}`);
+        } else {
+          throw new pRetry.AbortError(error.message);
+        }
+      },
+    }
+  );
+}
+```
+
+<Tip>
+Never retry security violations or authentication errors. Only retry transient failures (network, 5xx, rate limits).
+</Tip>
+
+### 4. Timeouts and Circuit Breakers
+
+Set timeouts for upstream calls and protect your system from cascading failures.
+
+```typescript
+import CircuitBreaker from 'opossum';
+import pTimeout from 'p-timeout';
+
+// Circuit breaker for LLM provider
+const llmBreaker = new CircuitBreaker(callLLM, {
+  timeout: 30000, // 30s timeout
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000,
+});
+
+llmBreaker.on('open', () => {
+  console.error('Circuit breaker opened - LLM provider failing');
+});
+
+// Timeout wrapper for security scans
+async function scanWithTimeout(content: string, timeoutMs: number = 5000) {
+  try {
+    return await pTimeout(
+      koreshield.scan({ content }),
+      {
+        milliseconds: timeoutMs,
+        message: 'Security scan timeout',
+      }
+    );
+  } catch (error) {
+    if (error.name === 'TimeoutError') {
+      // Fail closed on timeout
+      throw new Error('Security scan timeout - request blocked');
+    }
+    throw error;
+  }
+}
+```
+
+### 5. Structured Logging
+
+Log errors in a structured format and exclude sensitive content.
+
+```typescript
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' }),
+  ],
+});
+
+async function loggedScan(userId: string, content: string) {
+  const requestId = generateRequestId();
+
+  try {
+    const scan = await koreshield.scan({ content });
+
+    logger.info('scan_completed', {
+      requestId,
+      userId,
+      threatDetected: scan.threat_detected,
+      threatType: scan.threat_detected ? scan.threat_type : null,
+      // DO NOT log: content, patterns_matched
+    });
+
+    return scan;
+  } catch (error) {
+    logger.error('scan_failed', {
+      requestId,
+      userId,
+      error: error.message,
+      stack: error.stack,
+      // DO NOT log: content, API keys
+    });
+
+    throw error;
+  }
+}
+```
+
+<Warning>
+Never log sensitive data (prompts, API keys, PII) in error messages. Use request IDs for correlation instead.
+</Warning>
+
+## User-Facing Messages
+
+```typescript
+function getSafeErrorMessage(error: Error): string {
+  // Map internal errors to safe user messages
+  const errorMap: Record<string, string> = {
+    SECURITY_VIOLATION: 'Your message was blocked for security reasons. Please rephrase and try again.',
+    RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait a moment and try again.',
+    INVALID_INPUT: 'Invalid request. Please check your input and try again.',
+    PROVIDER_ERROR: 'The AI service is temporarily unavailable. Please try again later.',
+    INTERNAL_ERROR: 'An unexpected error occurred. Please contact support if this persists.',
+  };
+
+  return errorMap[error.code] || errorMap.INTERNAL_ERROR;
+}
+
+// Usage
+try {
+  return await secureCompletion(userMessage);
+} catch (error) {
+  return {
+    error: getSafeErrorMessage(error),
+    requestId: error.requestId, // For support reference
+  };
+}
+```
+
+<Info>
+Provide actionable guidance ("rephrase", "try again", "contact support") without revealing system internals.
+</Info>
+
+## Complete Error Handling Example
+
+```typescript
+import { Koreshield } from 'Koreshield-sdk';
+import OpenAI from 'openai';
+import pRetry from 'p-retry';
+import pTimeout from 'p-timeout';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+interface CompletionResult {
+  response?: string;
+  error?: string;
+  code?: ErrorCode;
+  requestId: string;
+}
+
+async function robustCompletion(
+  userId: string,
+  message: string
+): Promise<CompletionResult> {
+  const requestId = generateRequestId();
+
+  try {
+    // Step 1: Input validation
+    if (!message || message.length > 10000) {
+      throw createError(
+        ErrorCode.INVALID_INPUT,
+        'Message must be between 1 and 10,000 characters',
+        false
+      );
+    }
+
+    // Step 2: Security scan with timeout
+    const scan = await pTimeout(
+      koreshield.scan({
+        content: message,
+        userId,
+        sensitivity: 'high',
+      }),
+      {
+        milliseconds: 5000,
+        message: 'Security scan timeout',
+      }
+    );
+
+    // Step 3: Check for threats
+    if (scan.threat_detected) {
+      logger.warn('threat_detected', {
+        requestId,
+        userId,
+        threatType: scan.threat_type,
+      });
+
+      throw createError(
+        ErrorCode.SECURITY_VIOLATION,
+        'Request blocked for security reasons',
+        false
+      );
+    }
+
+    // Step 4: Call LLM with retry logic
+    const completion = await pRetry(
+      async () => {
+        return await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: message }],
+        });
+      },
+      {
+        retries: 3,
+        onFailedAttempt: (error) => {
+          if (error.response?.status === 429) {
+            logger.warn('rate_limited', { requestId, userId });
+          } else if (error.response?.status >= 500) {
+            logger.error('provider_error', { requestId, error: error.message });
+          } else {
+            // Don't retry client errors
+            throw new pRetry.AbortError(error.message);
+          }
+        },
+      }
+    );
+
+    logger.info('completion_success', {
+      requestId,
+      userId,
+      tokens: completion.usage?.total_tokens,
+    });
+
+    return {
+      response: completion.choices[0].message.content,
+      requestId,
+    };
+  } catch (error) {
+    // Categorize and log error
+    const errorCode = categorizeError(error);
+
+    logger.error('completion_failed', {
+      requestId,
+      userId,
+      errorCode,
+      message: error.message,
+    });
+
+    return {
+      error: getSafeErrorMessage(error),
+      code: errorCode,
+      requestId,
+    };
+  }
+}
+
+function categorizeError(error: any): ErrorCode {
+  if (error.code) return error.code;
+  if (error.response?.status === 429) return ErrorCode.RATE_LIMIT_EXCEEDED;
+  if (error.response?.status >= 500) return ErrorCode.PROVIDER_ERROR;
+  if (error.name === 'TimeoutError') return ErrorCode.INTERNAL_ERROR;
+  return ErrorCode.INTERNAL_ERROR;
+}
+```
+
+## Monitoring and Alerting
+
+```typescript
+import { Counter, Histogram } from 'prom-client';
+
+const errorCounter = new Counter({
+  name: 'koreshield_errors_total',
+  help: 'Total number of errors',
+  labelNames: ['error_code', 'error_type'],
+});
+
+const blockedRequests = new Counter({
+  name: 'koreshield_blocked_requests_total',
+  help: 'Total number of blocked requests',
+  labelNames: ['threat_type'],
+});
+
+const scanLatency = new Histogram({
+  name: 'koreshield_scan_latency_ms',
+  help: 'Scan latency in milliseconds',
+  buckets: [10, 50, 100, 200, 500, 1000],
+});
+
+// Track errors
+function trackError(error: Error) {
+  errorCounter.inc({
+    error_code: error.code || 'unknown',
+    error_type: error.name,
+  });
+}
+
+// Track blocked requests
+function trackBlocked(threatType: string) {
+  blockedRequests.inc({ threat_type: threatType });
+}
+```
+
+<Tip>
+Alert on spikes in blocked requests (potential attack) or provider errors (service degradation).
+</Tip>
+
+## Common Questions
+
+<AccordionGroup>
+  <Accordion title="Should I fail open or closed when KoreShield is unavailable?">
+    **Fail closed** (block requests) for high-security applications. **Fail open** (allow requests) only if:
+    - You have alternative security measures in place
+    - The impact of false positives is very high
+    - You implement caching of previous scan results as fallback
+
+    Most applications should fail closed to prevent security bypasses.
+  </Accordion>
+
+  <Accordion title="How should I handle rate limit errors?">
+    Implement exponential backoff with jitter:
+    ```typescript
+    const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+    const jitter = Math.random() * 1000;
+    await sleep(delay + jitter);
+    ```
+
+    Consider client-side rate limiting to avoid hitting server limits.
+  </Accordion>
+
+  <Accordion title="What information should I include in error logs?">
+    **Include:**
+    - Request ID (for correlation)
+    - User ID (hashed if needed)
+    - Error code and message
+    - Timestamp
+    - Stack trace
+
+    **Exclude:**
+    - User prompts or messages
+    - API keys or secrets
+    - PII or sensitive data
+    - Full system paths
+  </Accordion>
+
+  <Accordion title="How do I test error handling?">
+    Use test cases that simulate:
+    - Security violations (inject test attack patterns)
+    - Network failures (mock API unavailability)
+    - Timeouts (add artificial delays)
+    - Rate limits (exceed quota in test environment)
+
+    KoreShield provides test API keys for safe error testing.
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [Rate Limiting](/configuration/rate-limiting)
+- [Security Overview](/features/security-policies)
+- [Troubleshooting](/advanced/troubleshooting)

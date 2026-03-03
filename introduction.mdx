@@ -1,0 +1,180 @@
+---
+title: Welcome to KoreShield
+description: Enterprise-grade security platform for Large Language Model applications - protect against prompt injection, data exfiltration, and operational abuse.
+---
+
+# Welcome to KoreShield
+
+KoreShield is an open-source security platform designed to protect enterprise applications that use Large Language Models (LLMs) from prompt injection attacks. It acts as a transparent security layer between your application and LLM API providers (DeepSeek, OpenAI, Anthropic, etc.), sanitizing inputs, detecting threats, and enforcing policies before requests reach the model.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/getting-started/quickstart">
+    Get up and running with KoreShield in under 5 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/getting-started/installation">
+    Install the SDK or deploy the proxy service
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Configure security policies and provider settings
+  </Card>
+  <Card title="API Reference" icon="code" href="/api">
+    Explore the complete KoreShield API documentation
+  </Card>
+</CardGroup>
+
+## Why KoreShield?
+
+Integrating LLMs into production environments introduces novel attack vectors that traditional WAFs cannot detect. Prompt injection attacks pose a critical security risk for LLM-integrated systems. Attackers can:
+
+- **Override system instructions** - Manipulate the model's behavior by injecting malicious prompts
+- **Extract sensitive data** - Exfiltrate PII, credentials, or proprietary information
+- **Bypass security controls** - Circumvent safety guardrails and authentication
+- **Manipulate AI behavior** - Force the model to produce harmful or unintended outputs
+- **Exfiltrate proprietary information** - Steal training data or system prompts
+- **Launch denial of service attacks** - Resource exhaustion targeting expensive LLM tokens
+
+## Defense-in-Depth Protection
+
+KoreShield provides comprehensive security with four core components:
+
+<CardGroup cols={2}>
+  <Card title="Input Sanitization" icon="broom">
+    Cleans and normalizes prompts to remove potentially malicious content before processing
+  </Card>
+  <Card title="Attack Detection" icon="shield-halved">
+    Multi-layered analysis using heuristics, patterns, and LLM-based evaluation to identify threats
+  </Card>
+  <Card title="Policy Enforcement" icon="gavel">
+    Configurable security rules that determine how to handle suspicious requests
+  </Card>
+  <Card title="Audit Logging" icon="file-lines">
+    Complete security event recording for compliance and monitoring
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+When running in Proxy Mode, KoreShield sits transparently between your application and LLM providers:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Application   │───▶│ Input Sanitizer │───▶│ Attack Detector │───▶│  Policy Engine  │───▶│   LLM Provider  │
+│                 │    │                 │    │                 │    │                 │    │  (DeepSeek/     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘    │   OpenAI/etc)   │
+                                                                                   │        └─────────────────┘
+                                                                                   ▼
+                                                                    ┌─────────────────┐
+                                                                    │  Audit Logger   │
+                                                                    └─────────────────┘
+```
+
+<Note>
+KoreShield operates as a **transparent proxy**, intercepting API requests, performing deep security analysis, and enforcing your organization's security policies before requests reach the model provider.
+</Note>
+
+## Supported LLM Providers
+
+KoreShield supports multiple LLM providers through its proxy architecture:
+
+- **DeepSeek** - High-performance models with OpenAI-compatible API
+- **OpenAI** - GPT-3.5, GPT-4, and other models
+- **Anthropic** - Claude models (Claude 3.5 Sonnet, etc.)
+- **Google Gemini** - Coming soon
+- **Azure OpenAI** - Coming soon
+- **Custom Models** - Any OpenAI-compatible API endpoint
+
+## Key Features
+
+<CardGroup cols={3}>
+  <Card title="Multi-Provider Support" icon="network-wired">
+    Works with OpenAI, Anthropic, Google Gemini, Azure OpenAI, and any OpenAI-compatible API
+  </Card>
+  <Card title="Real-time Protection" icon="bolt">
+    Sub-millisecond latency with comprehensive security scanning
+  </Card>
+  <Card title="Configurable Policies" icon="wrench">
+    Adjust sensitivity levels and response actions based on your security requirements
+  </Card>
+  <Card title="Enterprise Ready" icon="building">
+    SOC 2 compliant with comprehensive audit trails and compliance reporting
+  </Card>
+  <Card title="Easy Integration" icon="plug">
+    Drop-in replacement for existing LLM API calls
+  </Card>
+  <Card title="Open Source" icon="code-branch">
+    Transparent security with community-driven improvements
+  </Card>
+</CardGroup>
+
+## Deployment Options
+
+KoreShield offers flexible deployment options to fit your infrastructure:
+
+### 1. Proxy Mode (Recommended)
+
+Deploy KoreShield as a standalone security proxy service. Your application sends LLM requests to KoreShield, which validates them before forwarding to your provider. This offers the best security isolation and works with any programming language.
+
+<CodeGroup>
+```bash Docker
+# Docker deployment
+docker run -p 8000:8000 \
+  -e DEEPSEEK_API_KEY=your-key \
+  Koreshield/Koreshield
+```
+
+```bash Railway
+# Railway deployment
+railway up
+```
+</CodeGroup>
+
+### 2. SDK Mode
+
+Use the KoreShield Python or JavaScript SDK to communicate with your KoreShield proxy or integrate security features directly into your application.
+
+<CodeGroup>
+```python Python
+from Koreshield import KoreshieldClient
+
+client = KoreshieldClient(base_url="http://localhost:8000")
+result = client.scan_prompt("Hello, how are you?")
+```
+
+```javascript JavaScript
+import { Koreshield } from 'Koreshield';
+
+const client = new Koreshield({ baseUrl: 'http://localhost:8000' });
+const result = await client.scanPrompt('Hello, how are you?');
+```
+</CodeGroup>
+
+## Performance First
+
+<CardGroup cols={3}>
+  <Card title="Sub-millisecond Latency" icon="gauge-high">
+    Optimized Go/Python engine for minimal overhead
+  </Card>
+  <Card title="Streaming Support" icon="water">
+    Full support for Server-Sent Events (SSE) and token streaming
+  </Card>
+  <Card title="High Throughput" icon="chart-line">
+    Horizontally scalable architecture designed for high-volume workloads
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="book" href="/getting-started/installation">
+    Deploy your first instance in under 5 minutes
+  </Card>
+  <Card title="Quick Start Tutorial" icon="graduation-cap" href="/getting-started/quickstart">
+    Secure your first LLM integration with a working example
+  </Card>
+  <Card title="RAG Defense" icon="shield" href="/features/rag-defense">
+    Learn how to secure your retrieval pipelines from indirect injection
+  </Card>
+  <Card title="API Reference" icon="terminal" href="/api/rest-api">
+    Explore the programmable security interface
+  </Card>
+</CardGroup>

@@ -1,0 +1,160 @@
+---
+title: Configuration Overview
+description: Configure KoreShield to match your security requirements and deployment needs
+---
+
+# Configuration Overview
+
+KoreShield uses a YAML-based configuration file (`config.yaml`) to control security policies, provider settings, logging, and integrations. This guide provides an overview of the main configuration areas.
+
+## Configuration File Location
+
+By default, KoreShield looks for `config.yaml` in the current working directory. You can specify a custom location using the `--config` flag:
+
+```bash
+koreshield --config /path/to/config.yaml
+```
+
+## Main Configuration Areas
+
+<CardGroup cols={2}>
+  <Card title="Settings" icon="gear" href="/configuration/settings">
+    Server, logging, monitoring, and provider configuration
+  </Card>
+  <Card title="Policies" icon="shield" href="/configuration/policies">
+    Security policies, sensitivity levels, and threat actions
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/configuration/rate-limiting">
+    Distributed rate limiting with Redis integration
+  </Card>
+  <Card title="Production Checklist" icon="list-check" href="/configuration/production-checklist">
+    Essential steps before deploying to production
+  </Card>
+</CardGroup>
+
+## Quick Start Configuration
+
+Here's a minimal production-ready configuration:
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+logging:
+  level: INFO
+  json_logs: true
+  container_mode: true
+
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+
+providers:
+  openai:
+    enabled: true
+    base_url: "https://api.openai.com/v1"
+
+redis:
+  enabled: true
+  url: "redis://localhost:6379/0"
+```
+
+## Environment Variables
+
+Sensitive credentials should be stored as environment variables, not in the configuration file:
+
+<ParamField path="KORESHIELD_API_KEY" type="string" required>
+  API key for authenticating requests to KoreShield
+</ParamField>
+
+<ParamField path="OPENAI_API_KEY" type="string">
+  OpenAI API key for provider authentication
+</ParamField>
+
+<ParamField path="ANTHROPIC_API_KEY" type="string">
+  Anthropic API key for Claude models
+</ParamField>
+
+<ParamField path="DEEPSEEK_API_KEY" type="string">
+  DeepSeek API key for DeepSeek models
+</ParamField>
+
+<ParamField path="GOOGLE_API_KEY" type="string">
+  Google API key for Gemini models
+</ParamField>
+
+<ParamField path="AZURE_OPENAI_API_KEY" type="string">
+  Azure OpenAI API key for Azure-hosted models
+</ParamField>
+
+<Warning>
+  Never commit API keys or sensitive credentials to version control. Always use environment variables or a secrets manager.
+</Warning>
+
+## Configuration Best Practices
+
+<AccordionGroup>
+  <Accordion title="How should I manage configuration across environments?">
+    Use separate `config.yaml` files for each environment (development, staging, production). Store them in a secure location and use environment-specific deployment scripts to apply the correct configuration.
+
+    ```bash
+    # Development
+    koreshield --config config.dev.yaml
+
+    # Production
+    koreshield --config config.prod.yaml
+    ```
+  </Accordion>
+
+  <Accordion title="What should I configure differently for production?">
+    Key production changes:
+    - Enable `json_logs: true` for structured logging
+    - Set `container_mode: true` if running in containers
+    - Use `sensitivity: medium` or `high`
+    - Set `default_action: block` for strict security
+    - Enable Redis for distributed rate limiting
+    - Configure monitoring and alerting
+  </Accordion>
+
+  <Accordion title="How do I validate my configuration?">
+    KoreShield validates configuration on startup and will report errors if:
+    - Required fields are missing
+    - Invalid values are provided
+    - Provider URLs are malformed
+
+    Check the startup logs for validation messages:
+    ```bash
+    koreshield --config config.yaml 2>&1 | grep -i "config\|error"
+    ```
+  </Accordion>
+
+  <Accordion title="Can I reload configuration without restarting?">
+    Currently, KoreShield requires a restart to apply configuration changes. Plan maintenance windows for configuration updates in production environments.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  See the [Production Checklist](/configuration/production-checklist) for a complete guide to production deployment.
+</Note>
+
+## Next Steps
+
+<Steps>
+  <Step title="Configure Settings">
+    Review [Settings](/configuration/settings) to configure server, logging, and providers
+  </Step>
+  <Step title="Set Up Policies">
+    Define security policies in [Policies](/configuration/policies)
+  </Step>
+  <Step title="Enable Rate Limiting">
+    Configure Redis-based rate limiting in [Rate Limiting](/configuration/rate-limiting)
+  </Step>
+  <Step title="Production Deployment">
+    Follow the [Production Checklist](/configuration/production-checklist) before going live
+  </Step>
+</Steps>

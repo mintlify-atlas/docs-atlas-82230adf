@@ -1,0 +1,184 @@
+---
+title: Google Gemini Integration
+description: Route Gemini requests through KoreShield with streaming support.
+---
+
+# Google Gemini Integration
+
+KoreShield proxies Gemini requests through the OpenAI-compatible endpoint and applies sanitization and policy enforcement before forwarding to Gemini.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install koreshield
+```
+
+```bash pip
+pip install koreshield
+```
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Get API Keys">
+    Obtain your Google Gemini API key and your KoreShield API key.
+  </Step>
+  
+  <Step title="Install KoreShield SDK">
+    Install the KoreShield SDK for your preferred language.
+  </Step>
+  
+  <Step title="Configure Security">
+    Set up KoreShield scanning and proxy configuration.
+  </Step>
+</Steps>
+
+## Basic Request
+
+<CodeGroup>
+```typescript TypeScript
+import { Koreshield } from "koreshield";
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY
+});
+
+const scan = await koreshield.scan({
+  content: "Summarize the quarterly update."
+});
+
+if (scan.threat_detected) {
+  throw new Error("Threat detected");
+}
+
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "gemini-2.5-pro",
+    messages: [{ role: "user", content: "Summarize the quarterly update." }]
+  })
+});
+```
+
+```python Python
+import os
+import requests
+from koreshield import KoreShieldClient
+
+koreshield = KoreShieldClient(api_key=os.environ["KORESHIELD_API_KEY"])
+
+scan = koreshield.scan_prompt("Summarize the quarterly update.")
+if not scan.is_safe:
+    raise Exception("Threat detected")
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "gemini-2.5-pro",
+        "messages": [{"role": "user", "content": "Summarize the quarterly update."}]
+    }
+)
+```
+</CodeGroup>
+
+## Streaming
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "gemini-2.5-pro",
+    stream: true,
+    messages: [{ role: "user", content: "Write a release summary." }]
+  })
+});
+```
+
+```python Python
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "gemini-2.5-pro",
+        "stream": True,
+        "messages": [{"role": "user", "content": "Write a release summary."}]
+    },
+    stream=True
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode("utf-8"))
+```
+</CodeGroup>
+
+## System Prompts and Multi-Turn
+
+<CodeGroup>
+```json JSON
+{
+  "model": "gemini-2.5-pro",
+  "messages": [
+    {"role": "system", "content": "You are a product analyst."},
+    {"role": "user", "content": "Summarize the update."},
+    {"role": "assistant", "content": "Summary..."},
+    {"role": "user", "content": "List risks."}
+  ]
+}
+```
+
+```python Python
+payload = {
+    "model": "gemini-2.5-pro",
+    "messages": [
+        {"role": "system", "content": "You are a product analyst."},
+        {"role": "user", "content": "Summarize the update."},
+        {"role": "assistant", "content": "Summary..."},
+        {"role": "user", "content": "List risks."}
+    ]
+}
+```
+</CodeGroup>
+
+## Compatibility Notes
+
+<Info>
+KoreShield forwards OpenAI-compatible payloads to the Gemini provider adapter. Validate any advanced fields with your Gemini setup before using in production.
+</Info>
+
+## Error Handling
+
+<Warning>
+- `403` indicates a blocked request due to policy enforcement
+- `429` or `5xx` typically indicates provider or rate-limit issues
+</Warning>
+
+## Security Controls
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/docs/configuration">
+    Configure providers and security settings
+  </Card>
+  <Card title="JavaScript SDK" icon="js" href="https://github.com/koreshield/koreshield/tree/main/koreshield-js-sdk">
+    Explore the JavaScript SDK
+  </Card>
+  <Card title="Python SDK" icon="python" href="https://github.com/koreshield/koreshield/tree/main/koreshield-python-sdk">
+    Explore the Python SDK
+  </Card>
+</CardGroup>

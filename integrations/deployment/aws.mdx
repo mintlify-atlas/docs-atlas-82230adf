@@ -1,0 +1,161 @@
+---
+title: AWS Deployment
+description: Deploy the KoreShield proxy on AWS using Docker or ECS
+icon: aws
+---
+
+This guide shows two common ways to run KoreShield on AWS: a simple EC2 Docker host or a managed ECS service.
+
+## Use Cases
+
+- Centralized LLM security proxy for multiple apps and teams
+- Compliance workloads that require audit trails and private networking
+- High-throughput production traffic with autoscaling and managed ingress
+
+## Architecture Choices
+
+- **EC2 + Docker** for low-cost, low-ops environments
+- **ECS Fargate** for managed compute and simpler scaling
+- **Optional:** ALB in front of the service for TLS termination and health checks
+
+## Option A: EC2 + Docker
+
+<Steps>
+  <Step title="Provision an EC2 Instance">
+    - Choose Amazon Linux 2023 or Ubuntu 22.04
+    - Open inbound ports for your app and KoreShield (default 8000)
+    - Prefer placing the instance in a private subnet with an ALB in front
+  </Step>
+
+  <Step title="Install Docker">
+    ```bash
+    # Amazon Linux 2023
+    sudo dnf update -y
+    sudo dnf install -y docker
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker ec2-user
+    ```
+  </Step>
+
+  <Step title="Configure KoreShield">
+    ```bash
+    # On the EC2 host
+    git clone https://github.com/koreshield/koreshield.git
+    cd koreshield/koreshield
+    cp config/config.example.yaml config/config.yaml
+    ```
+
+    Set provider API keys:
+
+    ```bash
+    export OPENAI_API_KEY=your-api-key
+    # or other provider keys
+    ```
+  </Step>
+
+  <Step title="Run with Docker">
+    ```bash
+    docker build -t koreshield .
+
+    docker run -d \
+      -p 8000:8000 \
+      -e OPENAI_API_KEY=$OPENAI_API_KEY \
+      -v $(pwd)/config/config.yaml:/app/config/config.yaml \
+      koreshield
+    ```
+  </Step>
+
+  <Step title="Verify Health">
+    ```bash
+    curl http://localhost:8000/health
+    ```
+  </Step>
+</Steps>
+
+## Option B: ECS (Fargate)
+
+<Steps>
+  <Step title="Build and Push Image to ECR">
+    ```bash
+    aws ecr create-repository --repository-name koreshield
+
+    # Authenticate and push
+    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin &lt;account-id&gt;.dkr.ecr.us-east-1.amazonaws.com
+
+    docker build -t koreshield .
+    docker tag koreshield:latest &lt;account-id&gt;.dkr.ecr.us-east-1.amazonaws.com/koreshield:latest
+
+    docker push &lt;account-id&gt;.dkr.ecr.us-east-1.amazonaws.com/koreshield:latest
+    ```
+  </Step>
+
+  <Step title="Create an ECS Task Definition">
+    - Container port: 8000
+    - Environment variables: provider keys
+    - Mount your config or bake it into the image
+    - Attach an IAM role for Secrets Manager or SSM access
+  </Step>
+
+  <Step title="Create a Service">
+    - Use an ALB or NLB
+    - Configure health checks at `/health`
+    - Enable autoscaling on CPU or request count
+  </Step>
+</Steps>
+
+## Secrets and Config
+
+<Note>
+Store provider keys in AWS Secrets Manager or SSM Parameter Store for enhanced security.
+</Note>
+
+- Store provider keys in AWS Secrets Manager or SSM Parameter Store
+- Pass secrets to the task as environment variables
+- Use `CONFIG_FILE` if you mount a custom config path
+
+## Networking and TLS
+
+- Terminate TLS at the ALB
+- Restrict inbound access to known CIDR ranges or VPC endpoints
+- Use a WAF if the endpoint is internet-facing
+
+## Observability
+
+- Enable `json_logs: true` and ship logs to CloudWatch
+- Scrape `/metrics` with Prometheus or use a sidecar exporter
+- Create CloudWatch alarms for high error rates and latency
+
+## Security Notes
+
+<Warning>
+Always use secure secret management for API keys and sensitive configuration.
+</Warning>
+
+- Store API keys in AWS Secrets Manager or SSM Parameter Store
+- Use `json_logs: true` in production
+- Restrict inbound access to the proxy endpoint
+
+## Troubleshooting
+
+<CodeGroup>
+```text ALB Issues
+502/504 from ALB: confirm target health checks hit `/health`
+```
+
+```text Authentication
+401 responses: verify your `KORESHIELD_API_KEY` header on clients
+```
+
+```text Timeouts
+Timeouts: increase ALB idle timeout and client timeouts for streaming
+```
+
+```text Provider Errors
+Provider errors: confirm provider keys and allowed egress from the VPC
+```
+</CodeGroup>
+
+## Next Steps
+
+- Configure providers in [/configuration/](/configuration/overview)
+- Add monitoring in [../monitoring/prometheus.mdx](../monitoring/prometheus.mdx)

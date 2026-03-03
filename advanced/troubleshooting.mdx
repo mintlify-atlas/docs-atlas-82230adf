@@ -1,0 +1,475 @@
+---
+title: Troubleshooting & FAQ
+description: Common issues, debugging tips, and frequently asked questions
+---
+
+# Troubleshooting & FAQ
+
+Solutions to common problems and answers to frequently asked questions.
+
+## Common Issues
+
+### API Key Not Working
+
+**Symptoms:**
+- 401 Unauthorized errors
+- "Invalid API key" messages
+
+**Solutions:**
+
+```typescript
+// Check environment variable is loaded
+console.log('API Key exists:', !!process.env.Koreshield_API_KEY);
+
+// Verify key format
+const apiKey = process.env.Koreshield_API_KEY;
+if (!apiKey.startsWith('ks_')) {
+  console.error('Invalid API key format');
+}
+
+// Test connection
+import { Koreshield } from 'Koreshield-sdk';
+
+const Koreshield = new Koreshield({ apiKey });
+
+try {
+  await Koreshield.scan({ content: 'test' });
+  console.log('Connection successful');
+} catch (error) {
+  console.error('Connection failed:', error.message);
+}
+```
+
+<Tip>
+API keys should start with `ks_`. If your key doesn't match this format, regenerate it from the dashboard.
+</Tip>
+
+### High Latency
+
+**Symptoms:**
+- Slow API responses (>500ms)
+- Timeouts
+
+**Solutions:**
+
+```typescript
+// Enable request caching
+const Koreshield = new Koreshield({
+  apiKey: process.env.Koreshield_API_KEY,
+  cache: {
+    enabled: true,
+    ttl: 300, // 5 minutes
+  },
+});
+
+// Use batch scanning
+const results = await Koreshield.batchScan({
+  items: messages.map((content, i) => ({ id: `${i}`, content })),
+});
+
+// Set timeouts
+const scan = await Promise.race([
+  Koreshield.scan({ content: message }),
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Timeout')), 5000)
+  ),
+]);
+```
+
+<Warning>
+If you're experiencing consistently high latency (>500ms), check your network connection to KoreShield's API and consider using a regional endpoint.
+</Warning>
+
+### False Positives
+
+**Symptoms:**
+- Legitimate content flagged as threats
+- Over-sensitive detection
+
+**Solutions:**
+
+```typescript
+// Adjust sensitivity
+const scan = await Koreshield.scan({
+  content: message,
+  sensitivity: 'medium', // or 'low'
+});
+
+// Use allowlist
+const scan = await Koreshield.scan({
+  content: message,
+  allowlist: ['technical terms', 'product names'],
+});
+
+// Custom policy
+const scan = await Koreshield.scan({
+  content: message,
+  policyId: 'custom-policy-id',
+});
+```
+
+### Rate Limiting
+
+**Symptoms:**
+- 429 Too Many Requests errors
+- Throttled responses
+
+**Solutions:**
+
+```typescript
+import pRetry from 'p-retry';
+
+async function scanWithRetry(content: string) {
+  return pRetry(
+    async () => {
+      return await Koreshield.scan({ content });
+    },
+    {
+      retries: 3,
+      onFailedAttempt: error => {
+        if (error.response?.status === 429) {
+          console.log('Rate limited, retrying...');
+        }
+      },
+    }
+  );
+}
+
+// Implement client-side rate limiting
+import Bottleneck from 'bottleneck';
+
+const limiter = new Bottleneck({
+  maxConcurrent: 10,
+  minTime: 100, // 100ms between requests
+});
+
+const scan = limiter.wrap((content: string) =>
+  Koreshield.scan({ content })
+);
+```
+
+<Info>
+Rate limits vary by plan. Check your dashboard for current limits and consider upgrading if you need higher throughput.
+</Info>
+
+### Memory Leaks
+
+**Symptoms:**
+- Increasing memory usage over time
+- Application crashes
+
+**Solutions:**
+
+```typescript
+// Properly close connections
+process.on('SIGTERM', async () => {
+  await Koreshield.close();
+  process.exit(0);
+});
+
+// Avoid storing large scan histories
+const MAX_HISTORY = 1000;
+let scanHistory: any[] = [];
+
+function addToHistory(scan: any) {
+  scanHistory.push(scan);
+  if (scanHistory.length > MAX_HISTORY) {
+    scanHistory = scanHistory.slice(-MAX_HISTORY);
+  }
+}
+
+// Use streaming for large responses
+for await (const chunk of streamResponse()) {
+  // Process chunk immediately, don't accumulate
+  await handleChunk(chunk);
+}
+```
+
+## Debugging Tips
+
+### Enable Debug Logging
+
+```typescript
+const Koreshield = new Koreshield({
+  apiKey: process.env.Koreshield_API_KEY,
+  debug: true,
+  logLevel: 'debug',
+});
+
+// Console will show:
+// [Koreshield] Request: POST /v1/scan
+// [Koreshield] Response: 200 OK (123ms)
+```
+
+### Inspect Scan Results
+
+```typescript
+const scan = await Koreshield.scan({ content: message });
+
+console.log('Scan Results:', {
+  threatDetected: scan.threat_detected,
+  threatType: scan.threat_type,
+  confidence: scan.confidence,
+  patterns: scan.patterns_matched,
+  metadata: scan.metadata,
+});
+```
+
+### Network Debugging
+
+```bash
+# Check connectivity
+curl -I https://api.Koreshield.com/health
+
+# Test API key
+curl -X POST https://api.Koreshield.com/v1/scan \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "test"}'
+
+# Monitor requests
+export DEBUG=axios
+npm start
+```
+
+### Performance Profiling
+
+```typescript
+async function profileScan(content: string) {
+  const start = performance.now();
+
+  const scan = await Koreshield.scan({ content });
+
+  const duration = performance.now() - start;
+
+  console.log(`Scan completed in ${duration.toFixed(2)}ms`);
+
+  return { scan, duration };
+}
+```
+
+<Tip>
+Use performance profiling to identify bottlenecks in your integration. Target P95 latency under 200ms for optimal user experience.
+</Tip>
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="How accurate is threat detection?">
+    KoreShield achieves 95%+ accuracy across 10+ attack types:
+    - Prompt injection: 97%
+    - Jailbreak attempts: 96%
+    - PII leakage: 98%
+    - Toxic content: 94%
+
+    Accuracy is configurable via sensitivity levels (high/medium/low).
+  </Accordion>
+
+  <Accordion title="What is the API rate limit?">
+    Rate limits vary by plan:
+    - **Free tier:** 1,000 requests/month (~33/day)
+    - **Pro tier:** 100,000 requests/month (~3,300/day)
+    - **Enterprise:** Unlimited with dedicated infrastructure
+
+    Burst limits allow temporary spikes up to 10x the sustained rate.
+  </Accordion>
+
+  <Accordion title="Does scanning work offline?">
+    No, KoreShield requires internet connectivity to access our cloud-based detection models. For air-gapped environments, contact sales about on-premises deployment options.
+  </Accordion>
+
+  <Accordion title="Can I self-host KoreShield?">
+    Yes, enterprise customers can deploy on-premises using:
+    - Docker containers
+    - Kubernetes (Helm charts provided)
+    - AWS/GCP/Azure private deployments
+
+    Contact sales for licensing and deployment guides.
+  </Accordion>
+
+  <Accordion title="What data is stored?">
+    By default, we store:
+    - Scan results (threat type, confidence)
+    - Metadata (user ID, timestamps)
+    - Aggregated analytics
+
+  </Accordion>
+
+  <Accordion title="Is my data encrypted?">
+    Yes, all data is encrypted:
+    - **In transit:** TLS 1.3
+    - **At rest:** AES-256
+    - **Keys:** Managed via AWS KMS or your own key management
+  </Accordion>
+
+  <Accordion title="What compliance certifications do you have?">
+    - SOC 2 Type II ✓
+    - GDPR compliant ✓
+    - HIPAA compliant (enterprise with BAA) ✓
+    - PCI-DSS Level 1 (in progress)
+    - FedRAMP (GovCloud available)
+
+    See [Compliance](/advanced/compliance) for details.
+  </Accordion>
+
+  <Accordion title="How do I migrate from another solution?">
+    ```typescript
+    // Example: Migrating from Lakera Guard
+    import { Koreshield } from 'Koreshield-sdk';
+
+    // Old code
+    // const result = await lakeraGuard.detect(prompt);
+
+    // New code
+    const Koreshield = new Koreshield({ apiKey: 'YOUR_KEY' });
+    const result = await Koreshield.scan({ content: prompt });
+
+    // Map response fields
+    const isBlocked = result.threat_detected;
+    const threatType = result.threat_type;
+    ```
+
+    We provide migration guides for common platforms. Contact support for assistance.
+  </Accordion>
+
+  <Accordion title="Can I use KoreShield with streaming responses?">
+    Yes! See our [Streaming Guide](/advanced/streaming) for implementation details. Security checks occur before streaming begins.
+  </Accordion>
+
+  <Accordion title="What happens if KoreShield is down?">
+    Implement graceful degradation:
+
+    ```typescript
+    async function resilientScan(content: string) {
+      try {
+        const scan = await Koreshield.scan({ content });
+        return scan.threat_detected;
+      } catch (error) {
+        // Log error and fail open
+        console.error('Koreshield unavailable:', error);
+        return false; // Allow content through
+      }
+    }
+    ```
+
+    Enterprise plans include 99.9% uptime SLA. Check [status.koreshield.com](https://status.koreshield.com) for real-time status.
+  </Accordion>
+
+  <Accordion title="How do I handle multi-language content?">
+    KoreShield supports 50+ languages automatically:
+
+    ```typescript
+    const scan = await Koreshield.scan({
+      content: 'Ignore las instrucciones anteriores', // Spanish
+      language: 'es', // Optional hint
+    });
+    ```
+
+    Language detection is automatic. The optional `language` parameter improves accuracy for ambiguous text.
+  </Accordion>
+
+  <Accordion title="Can I customize detection rules?">
+    Yes, enterprise customers can create custom rules:
+
+    ```typescript
+    const scan = await Koreshield.scan({
+      content: message,
+      customRules: [
+        {
+          pattern: /password|secret|token/i,
+          severity: 'high',
+        },
+      ],
+    });
+    ```
+
+    Contact support to configure custom rule sets in your account.
+  </Accordion>
+
+  <Accordion title="How do I test in development?">
+    Use test API keys:
+
+    ```typescript
+    const Koreshield = new Koreshield({
+      apiKey: process.env.NODE_ENV === 'production'
+        ? process.env.Koreshield_API_KEY
+        : 'ks_test_xxxxxxxxxxxx',
+    });
+    ```
+
+    Test keys have lower rate limits but don't affect production quotas.
+  </Accordion>
+
+  <Accordion title="What is the average response time?">
+    Performance metrics:
+    - **P50:** 50ms
+    - **P95:** 150ms
+    - **P99:** 300ms
+
+    With caching enabled, P50 can drop to &lt;10ms for repeated content.
+  </Accordion>
+
+  <Accordion title="Can I use KoreShield with serverless functions?">
+    Yes, works great with Lambda, Vercel, Netlify:
+
+    ```typescript
+    // Vercel Edge Function
+    export const config = { runtime: 'edge' };
+
+    export default async function handler(req: Request) {
+      const { message } = await req.json();
+
+      const scan = await Koreshield.scan({ content: message });
+
+      return Response.json({ safe: !scan.threat_detected });
+    }
+    ```
+
+    Use connection pooling and caching to avoid cold start penalties.
+  </Accordion>
+
+  <Accordion title="How do I monitor usage?">
+    Check the dashboard or use the API:
+
+    ```typescript
+    const usage = await Koreshield.getUsage({
+      startDate: '2024-01-01',
+      endDate: '2024-01-31',
+    });
+
+    console.log(`Requests: ${usage.total_requests}`);
+    console.log(`Threats blocked: ${usage.threats_blocked}`);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Codes
+
+| Code | Meaning | Solution |
+|------|---------|----------|
+| 401 | Invalid API key | Check your API key and ensure it starts with `ks_` |
+| 429 | Rate limit exceeded | Implement backoff or upgrade your plan |
+| 500 | Server error | Retry with exponential backoff |
+| 503 | Service unavailable | Check [status.koreshield.com](https://status.koreshield.com) |
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="Documentation" icon="book" href="https://docs.koreshield.com">
+    Comprehensive guides and API reference
+  </Card>
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/koreshield">
+    Join our community for support and discussions
+  </Card>
+  <Card title="Email Support" icon="envelope" href="mailto:support@koreshield.com">
+    Direct support from our team
+  </Card>
+  <Card title="Status Page" icon="signal" href="https://status.koreshield.com">
+    Real-time system status and incident updates
+  </Card>
+</CardGroup>
+
+## Related Documentation
+
+- [Performance Optimization](/advanced/performance)
+- [Security Best Practices](/best-practices/error-handling)

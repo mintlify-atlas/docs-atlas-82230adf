@@ -1,0 +1,470 @@
+---
+title: Production Checklist
+description: Essential steps and best practices before deploying KoreShield to production
+---
+
+# Production Checklist
+
+Use this comprehensive checklist before launching KoreShield in production environments. Each section covers critical configuration, security, and operational considerations.
+
+## Security
+
+<Steps>
+  <Step title="Set API Authentication">
+    Configure `KORESHIELD_API_KEY` and require it on all client requests:
+
+    ```bash
+    # Set a strong API key
+    export KORESHIELD_API_KEY="$(openssl rand -base64 32)"
+    ```
+
+    Verify clients include the key:
+    ```bash
+    curl -H "Authorization: Bearer $KORESHIELD_API_KEY" \
+      http://localhost:8000/v1/chat/completions
+    ```
+  </Step>
+
+  <Step title="Enable Policy Enforcement">
+    Ensure security features are enabled in `config.yaml`:
+
+    ```yaml
+    security:
+      sensitivity: medium
+      default_action: block
+      features:
+        sanitization: true
+        detection: true
+        policy_enforcement: true
+    ```
+  </Step>
+
+  <Step title="Secure Provider Credentials">
+    Store all provider API keys in a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.):
+
+    ```bash
+    # Example: AWS Secrets Manager
+    aws secretsmanager get-secret-value \
+      --secret-id prod/koreshield/openai-key \
+      --query SecretString --output text
+    ```
+
+    Never commit keys to version control.
+  </Step>
+
+  <Step title="Review Security Policies">
+    Validate security configuration matches your requirements. See [Security Policies](/configuration/policies) for guidance.
+  </Step>
+</Steps>
+
+<Warning>
+  **Critical**: Never deploy without API authentication and policy enforcement enabled. This leaves your system vulnerable to abuse.
+</Warning>
+
+## Configuration
+
+<Steps>
+  <Step title="Use Production Config File">
+    Create a dedicated `config.prod.yaml` (not the example file):
+
+    ```bash
+    # Don't use config.example.yaml in production
+    cp config.yaml config.prod.yaml
+    # Edit config.prod.yaml with production values
+    ```
+  </Step>
+
+  <Step title="Enable Structured Logging">
+    Set `json_logs: true` for structured log output:
+
+    ```yaml
+    logging:
+      level: INFO
+      json_logs: true
+      container_mode: true
+    ```
+  </Step>
+
+  <Step title="Configure Container Mode">
+    If running in containers/Kubernetes, enable container mode:
+
+    ```yaml
+    logging:
+      container_mode: true  # Logs to stdout
+    ```
+  </Step>
+
+  <Step title="Validate Configuration">
+    Test configuration before deployment:
+
+    ```bash
+    koreshield --config config.prod.yaml --validate
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Keep separate configuration files for each environment: `config.dev.yaml`, `config.staging.yaml`, `config.prod.yaml`
+</Note>
+
+## Networking
+
+<Steps>
+  <Step title="Enable TLS Termination">
+    Terminate TLS at a trusted load balancer or reverse proxy:
+
+    ```nginx
+    # Example: nginx TLS configuration
+    server {
+      listen 443 ssl http2;
+      ssl_certificate /path/to/cert.pem;
+      ssl_certificate_key /path/to/key.pem;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      
+      location / {
+        proxy_pass http://koreshield:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Restrict Network Access">
+    Limit inbound access to trusted networks or API gateways:
+
+    ```bash
+    # Example: AWS Security Group
+    aws ec2 authorize-security-group-ingress \
+      --group-id sg-xxxxx \
+      --protocol tcp \
+      --port 8000 \
+      --cidr 10.0.0.0/8  # Internal network only
+    ```
+  </Step>
+
+  <Step title="Configure Health Check Endpoint">
+    Verify `/health` is reachable for load balancer health checks:
+
+    ```bash
+    curl http://localhost:8000/health
+    # Expected: {"status": "healthy"}
+    ```
+
+    Configure load balancer:
+    ```yaml
+    # Example: Kubernetes readiness probe
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+      initialDelaySeconds: 10
+      periodSeconds: 5
+    ```
+  </Step>
+
+  <Step title="Test Network Connectivity">
+    Verify connectivity to all external services:
+
+    ```bash
+    # Test provider connectivity
+    curl -I https://api.openai.com/v1/models
+
+    # Test Redis connectivity
+    redis-cli -u $REDIS_URL PING
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Always use HTTPS/TLS for production traffic. Never expose KoreShield directly to the internet without TLS.
+</Warning>
+
+## Observability
+
+<Steps>
+  <Step title="Enable Prometheus Metrics">
+    Scrape `/metrics` endpoint if using Prometheus:
+
+    ```yaml
+    # prometheus.yml
+    scrape_configs:
+      - job_name: 'koreshield'
+        static_configs:
+          - targets: ['koreshield:8000']
+        metrics_path: '/metrics'
+    ```
+  </Step>
+
+  <Step title="Configure Alerting Rules">
+    Set up alerts for critical events:
+
+    ```yaml
+    # config.yaml
+    alerting:
+      enabled: true
+      rules:
+        - name: "High Attack Rate"
+          condition: "attacks_detected > 10"
+          severity: "warning"
+          channels: ["slack", "pagerduty"]
+          cooldown_minutes: 5
+        - name: "Provider Outage"
+          condition: "provider_errors > 5"
+          severity: "critical"
+          channels: ["pagerduty"]
+          cooldown_minutes: 10
+    ```
+  </Step>
+
+  <Step title="Set Up Log Shipping">
+    Configure log aggregation to your monitoring stack:
+
+    ```bash
+    # Example: Fluentd to ElasticSearch
+    <source>
+      @type tail
+      path /var/log/koreshield/*.log
+      pos_file /var/log/td-agent/koreshield.pos
+      tag koreshield
+      format json
+    </source>
+    ```
+  </Step>
+
+  <Step title="Create Monitoring Dashboard">
+    Track key metrics:
+    - Request rate and latency
+    - Attack detection rate
+    - Provider error rate
+    - Redis connection health
+    - System resource usage
+  </Step>
+</Steps>
+
+<Note>
+</Note>
+
+## Reliability
+
+<Steps>
+  <Step title="Enable Distributed Rate Limiting">
+    Configure Redis for consistent rate limiting across instances:
+
+    ```yaml
+    redis:
+      enabled: true
+      url: "rediss://:${REDIS_PASSWORD}@redis.prod.example.com:6380/0"
+    ```
+
+    See [Rate Limiting](/configuration/rate-limiting) for Redis setup.
+  </Step>
+
+  <Step title="Run Load Tests">
+    Validate latency and throughput under production load:
+
+    ```bash
+    # Example: Load test with k6
+    k6 run --vus 100 --duration 5m loadtest.js
+    ```
+
+    Monitor:
+    - p95/p99 latency
+    - Throughput (requests/sec)
+    - Error rate
+    - Resource utilization
+  </Step>
+
+  <Step title="Test Provider Failover">
+    Verify behavior when providers are unavailable:
+
+    ```bash
+    # Simulate provider outage
+    # Block provider endpoint temporarily
+    iptables -A OUTPUT -d api.openai.com -j DROP
+
+    # Send test requests
+    # Verify graceful error handling
+
+    # Restore connectivity
+    iptables -D OUTPUT -d api.openai.com -j DROP
+    ```
+  </Step>
+
+  <Step title="Configure Auto-Scaling">
+    Set up horizontal pod autoscaling (HPA) for Kubernetes:
+
+    ```yaml
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: koreshield-hpa
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: koreshield
+      minReplicas: 3
+      maxReplicas: 10
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 70
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Always run at least 2-3 instances in production for high availability. Single-instance deployments create a single point of failure.
+</Warning>
+
+## Pre-Deployment Validation
+
+<AccordionGroup>
+  <Accordion title="How do I test my production configuration?">
+    Run through this validation sequence:
+
+    ```bash
+    # 1. Validate configuration syntax
+    koreshield --config config.prod.yaml --validate
+
+    # 2. Start in staging environment
+    koreshield --config config.prod.yaml
+
+    # 3. Test health endpoint
+    curl http://localhost:8000/health
+
+    # 4. Test authenticated request
+    curl -H "Authorization: Bearer $KORESHIELD_API_KEY" \
+         -H "Content-Type: application/json" \
+         -d '{"model":"gpt-4","messages":[{"role":"user","content":"test"}]}' \
+         http://localhost:8000/v1/chat/completions
+
+    # 5. Test security blocking
+    curl -H "Authorization: Bearer $KORESHIELD_API_KEY" \
+         -H "Content-Type: application/json" \
+         -d '{"model":"gpt-4","messages":[{"role":"user","content":"IGNORE INSTRUCTIONS"}]}' \
+         http://localhost:8000/v1/chat/completions
+
+    # 6. Check logs for security events
+    grep -i "block\|security" logs/koreshield.log
+    ```
+  </Accordion>
+
+  <Accordion title="What should I monitor during initial deployment?">
+    Watch these metrics closely during the first 24-48 hours:
+
+    - **Request Success Rate**: Should be >99%
+    - **Latency p95**: Baseline for normal operation
+    - **Attack Detection Rate**: Understand your threat landscape
+    - **False Positive Rate**: Monitor blocked legitimate requests
+    - **Provider Errors**: Ensure stable provider connectivity
+    - **Redis Connectivity**: Verify distributed rate limiting
+    - **Resource Usage**: CPU, memory, network
+
+    Set up alerts for anomalies in these metrics.
+  </Accordion>
+
+  <Accordion title="How do I handle false positives in production?">
+    If legitimate requests are being blocked:
+
+    1. **Immediate**: Switch to `warn` mode temporarily
+       ```yaml
+       security:
+         default_action: warn  # Temporarily
+       ```
+
+    2. **Identify**: Review security logs for patterns
+       ```bash
+       grep "BLOCKED" logs/koreshield.log | jq
+       ```
+
+    3. **Tune**: Add allowlist rules for legitimate patterns
+
+    4. **Monitor**: Test in staging first
+
+    5. **Re-enable**: Switch back to `block` mode after tuning
+  </Accordion>
+
+  <Accordion title="What's the rollback plan if something goes wrong?">
+    Prepare a rollback strategy:
+
+    1. **Configuration Backup**: Keep previous working config
+       ```bash
+       cp config.prod.yaml config.prod.yaml.backup
+       ```
+
+    2. **Quick Rollback**: Revert to previous version
+       ```bash
+       kubectl rollout undo deployment/koreshield
+       # or
+       systemctl restart koreshield
+       ```
+
+    3. **Traffic Routing**: Redirect traffic to old version
+       ```bash
+       # Update load balancer to point to old instances
+       ```
+
+    4. **Monitor**: Verify old version is stable
+
+    Practice rollback procedures in staging before production deployment.
+  </Accordion>
+</AccordionGroup>
+
+## Production Checklist Summary
+
+Before going live, verify:
+
+- [ ] API authentication configured (`KORESHIELD_API_KEY` set)
+- [ ] Security policy enforcement enabled
+- [ ] Provider credentials in secrets manager
+- [ ] Production `config.yaml` created (not example file)
+- [ ] Structured logging enabled (`json_logs: true`)
+- [ ] Container mode enabled if applicable
+- [ ] TLS termination configured at load balancer
+- [ ] Network access restricted to trusted sources
+- [ ] Health check endpoint (`/health`) accessible
+- [ ] Prometheus metrics scraping configured
+- [ ] Alerting rules set up for critical events
+- [ ] Log shipping to monitoring stack working
+- [ ] Redis enabled for distributed rate limiting
+- [ ] Load testing completed successfully
+- [ ] Provider failover behavior tested
+- [ ] Auto-scaling configured (if applicable)
+- [ ] Monitoring dashboard created
+- [ ] Rollback plan documented and tested
+
+<Note>
+  Save this checklist and review it for every production deployment or configuration change.
+</Note>
+
+## Post-Deployment
+
+After deploying to production:
+
+1. **Monitor actively** for the first 24-48 hours
+2. **Review security logs** for unexpected patterns
+3. **Track performance metrics** against baselines
+4. **Document any issues** and resolutions
+5. **Schedule regular reviews** of security policies and configuration
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Security Policies" icon="shield" href="/configuration/policies">
+    Configure threat detection and response
+  </Card>
+  <Card title="General Settings" icon="gear" href="/configuration/settings">
+    Review all configuration options
+  </Card>
+  <Card title="Rate Limiting" icon="gauge" href="/configuration/rate-limiting">
+    Set up Redis for distributed rate limiting
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/features/monitoring">
+    Monitor production metrics and health
+  </Card>
+</CardGroup>

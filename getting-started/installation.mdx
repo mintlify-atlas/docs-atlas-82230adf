@@ -1,0 +1,224 @@
+---
+title: Installation
+description: Install and deploy KoreShield as a standalone proxy or SDK integration for your LLM applications
+---
+
+# Installation
+
+KoreShield can be used in two ways: as a **standalone proxy** (recommended for production) or as an **SDK** integrated directly into your application code.
+
+<Info>
+The standalone proxy sits between your application and LLM providers. This is the **most secure** deployment method as it operates independently of your application logic.
+</Info>
+
+## Installation Methods
+
+<Steps>
+  <Step title="Choose Your Deployment Method">
+    Select between Proxy Mode (recommended for production) or SDK Mode (for direct integration)
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install Docker for proxy deployment or install the SDK for your programming language
+  </Step>
+  
+  <Step title="Configure Environment">
+    Set up your API keys and configuration settings
+  </Step>
+  
+  <Step title="Verify Installation">
+    Test that KoreShield is working correctly
+  </Step>
+</Steps>
+
+## 1. Proxy Installation (Docker)
+
+The standalone proxy sits between your application and LLM providers, providing the most secure deployment method.
+
+<Steps>
+  <Step title="Pull the Docker Image">
+    Download the official KoreShield Docker image:
+    
+    ```bash
+    docker pull Koreshield/Koreshield
+    ```
+  </Step>
+  
+  <Step title="Run the Container">
+    Start the KoreShield proxy service:
+    
+    ```bash
+    docker run -p 8000:8000 Koreshield/Koreshield
+    ```
+    
+    The proxy will be available at `http://localhost:8000`
+  </Step>
+</Steps>
+
+<Note>
+For production deployments, make sure to configure environment variables for your LLM provider API keys.
+</Note>
+
+### System Requirements (Proxy)
+
+<CardGroup cols={3}>
+  <Card title="Docker" icon="docker">
+    Engine 20.10 or higher
+  </Card>
+  <Card title="Memory" icon="memory">
+    512MB minimum recommended
+  </Card>
+  <Card title="Network" icon="network-wired">
+    Outbound HTTPS access to LLM providers
+  </Card>
+</CardGroup>
+
+## 2. SDK Installation
+
+The SDKs allow you to integrate KoreShield features (sanitization, scanning) directly into your codebase or interact with a deployed KoreShield Proxy.
+
+<Tabs>
+  <Tab title="Python">
+    ### Install Python SDK
+    
+    Install the KoreShield Python package using pip:
+    
+    ```bash
+    pip install Koreshield
+    ```
+    
+    ### Verify Installation
+    
+    Check that the Python SDK has been installed successfully:
+    
+    ```bash
+    python -c "import Koreshield; print(Koreshield.__version__)"
+    ```
+    
+    ### Basic Usage
+    
+    ```python
+    from Koreshield import KoreshieldClient
+    
+    # Connect to your KoreShield proxy
+    client = KoreshieldClient(base_url="http://localhost:8000")
+    
+    # Scan a prompt for security threats
+    result = client.scan_prompt("Hello, how are you?")
+    
+    if result.is_safe:
+        print("Prompt is safe to send to LLM")
+    else:
+        print(f"Threat detected: {result.threat_type}")
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript/TypeScript">
+    ### Install JavaScript SDK
+    
+    Install the KoreShield package using npm:
+    
+    ```bash
+    npm install Koreshield
+    ```
+    
+    Or using yarn:
+    
+    ```bash
+    yarn add Koreshield
+    ```
+    
+    ### Basic Usage
+    
+    ```typescript
+    import { Koreshield } from 'Koreshield';
+    
+    // Connect to your KoreShield proxy
+    const client = new Koreshield({ 
+      baseUrl: 'http://localhost:8000' 
+    });
+    
+    // Scan a prompt for security threats
+    const result = await client.scanPrompt('Hello, how are you?');
+    
+    if (result.isSafe) {
+      console.log('Prompt is safe to send to LLM');
+    } else {
+      console.log(`Threat detected: ${result.threatType}`);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Quick Start with Docker Compose
+
+For a complete setup with environment variables and configuration:
+
+```yaml docker-compose.yml
+version: '3.8'
+
+services:
+  koreshield:
+    image: Koreshield/Koreshield:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - KORESHIELD_API_KEY=${KORESHIELD_API_KEY}
+      - SECURITY_SENSITIVITY=medium
+      - DEFAULT_ACTION=block
+    restart: unless-stopped
+```
+
+Run with:
+
+```bash
+docker-compose up -d
+```
+
+## Environment Configuration
+
+<Warning>
+Never commit API keys to version control. Always use environment variables or secrets management.
+</Warning>
+
+Configure KoreShield using environment variables:
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DEEPSEEK_API_KEY` | Your DeepSeek API key | Optional |
+| `OPENAI_API_KEY` | Your OpenAI API key | Optional |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key | Optional |
+| `KORESHIELD_API_KEY` | API key to protect KoreShield proxy | Recommended |
+| `SECURITY_SENSITIVITY` | Security level: `low`, `medium`, or `high` | Optional (default: `medium`) |
+| `DEFAULT_ACTION` | Default action: `block`, `warn`, or `allow` | Optional (default: `block`) |
+
+## Deployment Options
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="/integrations/deployment/docker">
+    Deploy with Docker containers
+  </Card>
+  <Card title="Kubernetes" icon="dharmachakra" href="/integrations/deployment/kubernetes">
+    Deploy on Kubernetes clusters
+  </Card>
+  <Card title="AWS" icon="aws" href="/integrations/deployment/aws">
+    Deploy on Amazon Web Services
+  </Card>
+  <Card title="Railway" icon="train" href="/integrations/deployment/railway">
+    One-click Railway deployment
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/getting-started/quickstart">
+    Secure your first LLM integration with a complete working example
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure security policies and customize KoreShield behavior
+  </Card>
+</CardGroup>

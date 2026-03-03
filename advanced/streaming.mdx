@@ -1,0 +1,337 @@
+---
+title: Advanced Streaming
+description: Advanced streaming configuration for KoreShield
+---
+
+# Advanced Streaming
+
+KoreShield supports streaming responses through its OpenAI-compatible proxy. This page covers production-grade streaming guidance, timeouts, and infrastructure considerations.
+
+<Info>
+Streaming enables low-latency user experiences by delivering partial responses as they're generated, while maintaining full security scanning.
+</Info>
+
+## Use Cases
+
+- **Low-latency UX** with partial tokens appearing in real-time
+- **Long-form generation** where full responses exceed typical timeouts
+- **Real-time dashboards** and agent pipelines
+- **Interactive chat** applications with immediate feedback
+
+## How Streaming Works
+
+1. Client sends a request with `stream: true` to the KoreShield proxy
+2. KoreShield applies security checks, then forwards the request to the provider
+3. The proxy relays streamed chunks to the client as they arrive
+
+<Warning>
+Security checks occur before streaming begins. KoreShield validates the input prompt but cannot modify content mid-stream. For response filtering, use post-processing.
+</Warning>
+
+## Client Examples
+
+### TypeScript (Fetch)
+
+```typescript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "gpt-5-mini",
+    stream: true,
+    messages: [{ role: "user", content: "Draft an incident summary." }]
+  })
+});
+
+const reader = response.body?.getReader();
+if (!reader) throw new Error("Streaming not supported");
+
+const decoder = new TextDecoder();
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  const chunk = decoder.decode(value, { stream: true });
+  process.stdout.write(chunk);
+}
+```
+
+### TypeScript (OpenAI SDK)
+
+```typescript
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: 'http://localhost:8000/v1', // KoreShield proxy
+});
+
+const stream = await openai.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Explain RAG security' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+}
+```
+
+### Python (Requests)
+
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "gpt-5-mini",
+        "stream": True,
+        "messages": [{"role": "user", "content": "Draft an incident summary."}]
+    },
+    stream=True,
+    timeout=120
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode("utf-8"))
+```
+
+### Python (OpenAI SDK)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY"),
+    base_url="http://localhost:8000/v1",  # KoreShield proxy
+)
+
+stream = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Explain RAG security"}],
+    stream=True,
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+## Reverse Proxy and Load Balancer Settings
+
+Streaming requires long-lived connections. Ensure any proxy or load balancer supports:
+
+- **Idle timeouts** of 60 to 120 seconds or higher
+- **HTTP/1.1 keep-alive** or HTTP/2 support
+- **Response buffering disabled** or minimized
+
+<Tip>
+If you use NGINX, set `proxy_buffering off;` and increase `proxy_read_timeout` to at least 120s.
+</Tip>
+
+### NGINX Configuration
+
+```nginx
+location /v1/ {
+    proxy_pass http://koreshield:8000;
+    proxy_buffering off;
+    proxy_read_timeout 120s;
+    proxy_connect_timeout 10s;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+}
+```
+
+### AWS Application Load Balancer
+
+```yaml
+TargetGroup:
+  HealthCheckEnabled: true
+  HealthCheckIntervalSeconds: 30
+  HealthCheckTimeoutSeconds: 5
+  TargetGroupAttributes:
+    - Key: deregistration_delay.timeout_seconds
+      Value: '30'
+    - Key: deregistration_delay.connection_termination.enabled
+      Value: 'true'
+```
+
+## Timeouts and Retries
+
+- Client timeouts should be **higher than your longest expected response**
+- **Retries should be disabled** for streaming requests unless you support resume logic
+- Consider a **fallback to non-streaming** if streaming fails
+
+```typescript
+async function streamWithFallback(messages: Array<Message>) {
+  try {
+    // Attempt streaming
+    return await streamCompletion(messages);
+  } catch (error) {
+    if (error.code === 'STREAM_ERROR') {
+      console.warn('Streaming failed, falling back to non-streaming');
+      // Fallback to regular completion
+      return await regularCompletion(messages);
+    }
+    throw error;
+  }
+}
+```
+
+## Security Considerations
+
+<Warning>
+Apply the same policy enforcement for streamed and non-streamed requests. Never bypass security checks to enable streaming.
+</Warning>
+
+```typescript
+import { Koreshield } from 'Koreshield-sdk';
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+});
+
+async function secureStream(userMessage: string) {
+  // Scan before streaming
+  const scan = await koreshield.scan({
+    content: userMessage,
+    sensitivity: 'high',
+  });
+
+  if (scan.threat_detected) {
+    throw new Error(`Blocked: ${scan.threat_type}`);
+  }
+
+  // Proceed with streaming
+  const stream = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [{ role: 'user', content: userMessage }],
+    stream: true,
+  });
+
+  return stream;
+}
+```
+
+## Observability
+
+### Logging Streaming Requests
+
+```typescript
+import { logger } from './logger';
+
+async function monitoredStream(userId: string, messages: Array<Message>) {
+  const startTime = Date.now();
+  let tokenCount = 0;
+  let completed = false;
+
+  try {
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      tokenCount++;
+      yield chunk;
+    }
+
+    completed = true;
+  } finally {
+    // Log stream metrics
+    logger.info('stream_completed', {
+      userId,
+      duration: Date.now() - startTime,
+      tokens: tokenCount,
+      completed,
+    });
+  }
+}
+```
+
+### Prometheus Metrics
+
+```typescript
+import { Counter, Histogram } from 'prom-client';
+
+const streamDuration = new Histogram({
+  name: 'koreshield_stream_duration_ms',
+  help: 'Stream duration in milliseconds',
+  buckets: [100, 500, 1000, 2000, 5000, 10000],
+});
+
+const streamTokens = new Histogram({
+  name: 'koreshield_stream_tokens',
+  help: 'Number of tokens in stream',
+  buckets: [10, 50, 100, 500, 1000, 5000],
+});
+
+const streamErrors = new Counter({
+  name: 'koreshield_stream_errors_total',
+  help: 'Total number of stream errors',
+  labelNames: ['error_type'],
+});
+```
+
+<Tip>
+Enable structured logging with `json_logs: true` in your KoreShield config for better stream analysis.
+</Tip>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Empty stream or no chunks received">
+    **Possible causes:**
+    - Provider doesn't support streaming for the selected model
+    - Missing `stream: true` in request
+    - Proxy buffering responses
+
+    **Solutions:**
+    - Verify model supports streaming in provider docs
+    - Check request payload includes `stream: true`
+    - Disable buffering in reverse proxy (see NGINX config above)
+  </Accordion>
+
+  <Accordion title="Broken connections or premature stream termination">
+    **Possible causes:**
+    - Idle timeout too short
+    - Load balancer closing connection
+    - Client timeout exceeded
+
+    **Solutions:**
+    - Increase idle timeouts on load balancers to 120s+
+    - Implement keep-alive headers
+    - Increase client read timeout
+  </Accordion>
+
+  <Accordion title="Delayed chunks or buffering">
+    **Possible causes:**
+    - Response buffering enabled in proxy
+    - Network latency
+    - Provider throttling
+
+    **Solutions:**
+    - Disable response buffering in proxy config
+    - Check network latency to provider
+    - Monitor provider API status
+  </Accordion>
+
+  <Accordion title="High latency on first chunk">
+    **Possible causes:**
+    - Cold start on serverless infrastructure
+    - Security scanning overhead
+    - Provider model loading time
+
+    **Solutions:**
+    - Use provisioned concurrency for serverless
+    - Cache security scan results for identical prompts
+    - Select models optimized for low TTFT (time to first token)
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+- [OpenAI Integration](/integrations/models/openai)
+- [Performance Optimization](/advanced/performance)

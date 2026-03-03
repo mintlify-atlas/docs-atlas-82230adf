@@ -1,0 +1,261 @@
+---
+title: Anthropic Claude Integration
+description: Secure Claude requests through KoreShield with streaming and tool support.
+---
+
+# Anthropic Claude Integration
+
+Protect Claude workflows by scanning inputs with KoreShield and routing requests through the proxy.
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install koreshield @anthropic-ai/sdk
+```
+
+```bash pip
+pip install koreshield anthropic
+```
+</CodeGroup>
+
+## Basic Integration
+
+<CodeGroup>
+```typescript TypeScript
+import { Koreshield } from "koreshield";
+import Anthropic from "@anthropic-ai/sdk";
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY
+});
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
+
+export async function secureClaude(userMessage: string) {
+  const scan = await koreshield.scan({ content: userMessage });
+  if (scan.threat_detected) {
+    throw new Error(`Threat: ${scan.threat_type}`);
+  }
+
+  const message = await anthropic.messages.create({
+    model: "claude-3-5-sonnet-20241022",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: userMessage }]
+  });
+
+  return message.content[0].text;
+}
+```
+
+```python Python
+import os
+from koreshield import KoreShieldClient
+from anthropic import Anthropic
+
+koreshield = KoreShieldClient(api_key=os.environ["KORESHIELD_API_KEY"])
+anthropic = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+def secure_claude(user_message: str) -> str:
+    scan = koreshield.scan_prompt(user_message)
+    if not scan.is_safe:
+        raise Exception(f"Threat: {scan.threat_level}")
+
+    message = anthropic.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": user_message}]
+    )
+
+    return message.content[0].text
+```
+</CodeGroup>
+
+## Proxy Mode
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "claude-3-5-sonnet-20241022",
+    messages: [{ role: "user", content: "Summarize the incident." }]
+  })
+});
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": [{"role": "user", "content": "Summarize the incident."}]
+    }
+)
+```
+</CodeGroup>
+
+## Streaming
+
+<CodeGroup>
+```typescript TypeScript (Native SDK)
+const stream = await anthropic.messages.stream({
+  model: "claude-3-5-sonnet-20241022",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Draft a security summary." }]
+});
+
+for await (const event of stream) {
+  if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+    process.stdout.write(event.delta.text);
+  }
+}
+```
+
+```python Python (Native SDK)
+with anthropic.messages.stream(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Draft a security summary."}]
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="")
+```
+
+```typescript TypeScript (Proxy)
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+  model: "claude-3-5-sonnet-20241022",
+  stream: true,
+  messages: [{ role: "user", content: "Draft a compliance summary." }]
+  })
+});
+```
+
+```python Python (Proxy)
+response = requests.post(
+  "http://localhost:8000/v1/chat/completions",
+  json={
+    "model": "claude-3-5-sonnet-20241022",
+    "stream": True,
+    "messages": [{"role": "user", "content": "Draft a compliance summary."}]
+  },
+  stream=True
+)
+
+for line in response.iter_lines():
+  if line:
+    print(line.decode("utf-8"))
+```
+</CodeGroup>
+
+## Tool Use
+
+<CodeGroup>
+```typescript TypeScript
+const tools: Anthropic.Tool[] = [
+  {
+    name: "search_database",
+    description: "Search the database",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"]
+    }
+  }
+];
+
+const message = await anthropic.messages.create({
+  model: "claude-3-5-sonnet-20241022",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Search for user 123" }],
+  tools
+});
+```
+
+```python Python
+tools = [
+  {
+    "name": "search_database",
+    "description": "Search the database",
+    "input_schema": {
+      "type": "object",
+      "properties": {"query": {"type": "string"}},
+      "required": ["query"]
+    }
+  }
+]
+
+message = anthropic.messages.create(
+  model="claude-3-5-sonnet-20241022",
+  max_tokens=1024,
+  messages=[{"role": "user", "content": "Search for user 123"}],
+  tools=tools
+)
+```
+</CodeGroup>
+
+## System Prompts and Multi-Turn
+
+<CodeGroup>
+```json JSON
+{
+  "model": "claude-3-5-sonnet-20241022",
+  "messages": [
+    {"role": "system", "content": "You are a compliance assistant."},
+    {"role": "user", "content": "Summarize the incident."},
+    {"role": "assistant", "content": "Summary..."},
+    {"role": "user", "content": "List next steps."}
+  ]
+}
+```
+
+```python Python
+payload = {
+    "model": "claude-3-5-sonnet-20241022",
+    "messages": [
+        {"role": "system", "content": "You are a compliance assistant."},
+        {"role": "user", "content": "Summarize the incident."},
+        {"role": "assistant", "content": "Summary..."},
+        {"role": "user", "content": "List next steps."}
+    ]
+}
+```
+</CodeGroup>
+
+## Error Handling
+
+<Warning>
+- `403` indicates a blocked request due to policy enforcement
+- `429` or `5xx` typically indicates provider or rate-limit issues
+</Warning>
+
+## Security Controls
+
+```yaml
+security:
+  sensitivity: high
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/docs/configuration">
+    Configure providers and security settings
+  </Card>
+  <Card title="Python SDK" icon="python" href="https://github.com/koreshield/koreshield/tree/main/koreshield-python-sdk">
+    Try RAG protections
+  </Card>
+</CardGroup>

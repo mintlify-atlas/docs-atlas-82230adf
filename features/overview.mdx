@@ -1,0 +1,141 @@
+---
+title: Features overview
+description: KoreShield security features and capabilities
+icon: shield-check
+---
+
+# Features overview
+
+KoreShield provides comprehensive security protection for LLM applications through multiple layers of defense. Explore our key features below:
+
+<CardGroup cols={2}>
+  <Card title="RAG Defense Engine" icon="shield-halved" href="/features/rag-defense">
+    Detect and block indirect prompt injection in RAG systems
+  </Card>
+  
+  <Card title="Attack Detection" icon="radar" href="/features/attack-detection">
+    Multi-layered detection of prompt injection and security threats
+  </Card>
+  
+  <Card title="Security Policies" icon="gavel" href="/features/security-policies-policies">
+    Configurable policies for threat response and enforcement
+  </Card>
+  
+  <Card title="Input Sanitization" icon="broom">
+    Clean and normalize prompts to remove malicious content
+  </Card>
+</CardGroup>
+
+## Core Security Capabilities
+
+KoreShield protects your LLM applications through four core security components:
+
+### Input Sanitization
+
+Cleans and normalizes prompts before they reach the LLM:
+- Removes potentially malicious content patterns
+- Normalizes encoding and special characters
+- Strips dangerous formatting attempts
+- Validates input structure
+
+### Attack Detection
+
+Analyzes prompts and responses for signs of attacks:
+- **Keyword-Based Detection** - Direct injection phrases and patterns
+- **Pattern Analysis** - Code injection, role manipulation, encoding tricks
+- **Custom Rules** - Flexible rule engine for your specific needs
+- **ML-Inspired Heuristics** - Anomaly detection and scoring
+
+### Policy Enforcement
+
+Applies configurable security rules:
+- Sensitivity levels (low, medium, high)
+- Response actions (allow, warn, block)
+- Custom policies per environment
+- Allowlists and blocklists
+
+### Audit Logging
+
+Records all security events and decisions:
+- Comprehensive security event tracking
+- Compliance-ready audit trails
+- Real-time monitoring integration
+- Detailed threat taxonomy
+
+## Multi-Provider Support
+
+KoreShield works seamlessly with all major LLM providers:
+
+<CardGroup cols={3}>
+  <Card title="OpenAI" icon="circle-check">
+    GPT-3.5, GPT-4, and all models
+  </Card>
+  
+  <Card title="Anthropic" icon="circle-check">
+    Claude 3.5 Sonnet and family
+  </Card>
+  
+  <Card title="DeepSeek" icon="circle-check">
+    High-performance models
+  </Card>
+  
+  <Card title="Google Gemini" icon="circle-check">
+    Gemini Pro and Ultra
+  </Card>
+  
+  <Card title="Azure OpenAI" icon="circle-check">
+    Enterprise OpenAI deployment
+  </Card>
+  
+  <Card title="Custom Models" icon="circle-check">
+    Any OpenAI-compatible API
+  </Card>
+</CardGroup>
+
+## Key Benefits
+
+<Accordion title="Real-time Protection">
+  Sub-millisecond latency with comprehensive security scanning. KoreShield adds minimal overhead to your LLM requests while providing complete protection.
+</Accordion>
+
+<Accordion title="Easy Integration">
+  Drop-in replacement for existing LLM API calls. Simply point your application to the KoreShield proxy and you're protected.
+</Accordion>
+
+<Accordion title="Enterprise Ready">
+  - SOC 2 Type II compliant
+  - GDPR and HIPAA ready
+  - Comprehensive audit trails
+  - Multi-tenant support
+</Accordion>
+
+<Accordion title="Open Source">
+  Transparent security with community-driven improvements. Audit the code, contribute features, and customize for your needs.
+</Accordion>
+
+## Performance Metrics
+
+- **Latency**: P50 &lt; 50ms, P99 &lt; 300ms
+- **Throughput**: 1000+ requests/second per instance
+- **Detection Accuracy**: 99.5% true positive rate
+- **False Positive Rate**: &lt; 0.1% with default settings
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Try RAG Defense" icon="rocket" href="/features/rag-defense">
+    Protect your RAG pipelines from indirect injection
+  </Card>
+  
+  <Card title="Configure Policies" icon="sliders" href="/features/security-policies-policies">
+    Set up security policies for your environment
+  </Card>
+  
+  <Card title="View Integrations" icon="plug" href="/integrations/overview">
+    Explore framework and platform integrations
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Dive into the complete API documentation
+  </Card>
+</CardGroup>

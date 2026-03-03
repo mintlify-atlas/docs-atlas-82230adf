@@ -1,0 +1,286 @@
+---
+title: AutoGen Integration
+description: Secure multi-agent workflows in AutoGen with KoreShield
+icon: users
+---
+
+# AutoGen Integration
+
+Use KoreShield as a proxy for AutoGen agent requests to enforce sanitization, detection, and policy controls before traffic reaches your provider.
+
+## Use Cases
+
+- Multi-agent workflows with strict safety policies
+- Centralized auditing for agent traffic
+- Shared rate limiting across agent fleets
+
+## Prerequisites
+
+<Steps>
+  <Step title="Running KoreShield Instance">
+    Ensure you have a running KoreShield instance accessible from your application.
+  </Step>
+  
+  <Step title="Provider API Key">
+    Configure your provider API key on the KoreShield server.
+  </Step>
+  
+  <Step title="Install AutoGen">
+    ```bash
+    pip install pyautogen
+    ```
+  </Step>
+</Steps>
+
+## Environment Variables
+
+```bash
+KORESHIELD_BASE_URL=http://localhost:8000
+KORESHIELD_API_KEY=your-koreshield-api-key
+```
+
+## Configuration
+
+### Basic Setup
+
+```python
+import autogen
+
+llm_config = {
+    "config_list": [
+        {
+            "model": "gpt-5-mini",
+            "api_key": "unused",
+            "base_url": "http://localhost:8000",
+            "default_headers": {
+                "Authorization": "Bearer your-koreshield-api-key"
+            }
+        }
+    ],
+    "temperature": 0.2
+}
+
+assistant = autogen.AssistantAgent(
+    name="assistant",
+    llm_config=llm_config
+)
+
+user_proxy = autogen.UserProxyAgent(
+    name="user",
+    human_input_mode="NEVER",
+    max_consecutive_auto_reply=3
+)
+
+user_proxy.initiate_chat(
+    assistant,
+    message="Summarize the incident report and flag risky items."
+)
+```
+
+## Multi-Agent Workflows
+
+### Secure Agent Fleet
+
+```python
+import autogen
+import os
+
+# KoreShield configuration
+koreshield_config = {
+    "base_url": os.getenv("KORESHIELD_BASE_URL", "http://localhost:8000"),
+    "api_key": os.getenv("KORESHIELD_API_KEY")
+}
+
+llm_config = {
+    "config_list": [
+        {
+            "model": "gpt-4",
+            "api_key": "unused",  # Actual key stored on KoreShield server
+            "base_url": koreshield_config["base_url"],
+            "default_headers": {
+                "Authorization": f"Bearer {koreshield_config['api_key']}"
+            }
+        }
+    ],
+    "temperature": 0.7
+}
+
+# Create multiple agents
+researcher = autogen.AssistantAgent(
+    name="researcher",
+    system_message="You are a research assistant.",
+    llm_config=llm_config
+)
+
+writer = autogen.AssistantAgent(
+    name="writer",
+    system_message="You are a technical writer.",
+    llm_config=llm_config
+)
+
+critic = autogen.AssistantAgent(
+    name="critic",
+    system_message="You are a critical reviewer.",
+    llm_config=llm_config
+)
+
+user_proxy = autogen.UserProxyAgent(
+    name="user",
+    human_input_mode="TERMINATE",
+    max_consecutive_auto_reply=10
+)
+
+# All agent interactions are protected by KoreShield
+groupchat = autogen.GroupChat(
+    agents=[user_proxy, researcher, writer, critic],
+    messages=[],
+    max_round=12
+)
+
+manager = autogen.GroupChatManager(
+    groupchat=groupchat,
+    llm_config=llm_config
+)
+
+user_proxy.initiate_chat(
+    manager,
+    message="Research and write a report on LLM security best practices."
+)
+```
+
+## Custom Security Policies
+
+### Per-Agent Configuration
+
+```python
+# High security for customer-facing agent
+customer_agent_config = {
+    "config_list": [{
+        "model": "gpt-4",
+        "base_url": "http://localhost:8000",
+        "default_headers": {
+            "Authorization": f"Bearer {os.getenv('KORESHIELD_API_KEY')}",
+            "X-Security-Level": "high"
+        }
+    }],
+    "temperature": 0.3
+}
+
+# Lower security for internal analysis agent
+internal_agent_config = {
+    "config_list": [{
+        "model": "gpt-4",
+        "base_url": "http://localhost:8000",
+        "default_headers": {
+            "Authorization": f"Bearer {os.getenv('KORESHIELD_API_KEY')}",
+            "X-Security-Level": "medium"
+        }
+    }],
+    "temperature": 0.7
+}
+
+customer_agent = autogen.AssistantAgent(
+    name="customer_support",
+    llm_config=customer_agent_config
+)
+
+analyst_agent = autogen.AssistantAgent(
+    name="data_analyst",
+    llm_config=internal_agent_config
+)
+```
+
+## Error Handling
+
+```python
+import autogen
+from typing import Dict, Any
+
+def safe_chat(agent: autogen.AssistantAgent, message: str) -> Dict[str, Any]:
+    """Execute chat with error handling for security blocks"""
+    try:
+        user_proxy = autogen.UserProxyAgent(
+            name="user",
+            human_input_mode="NEVER",
+            max_consecutive_auto_reply=1
+        )
+        
+        user_proxy.initiate_chat(agent, message=message)
+        
+        return {
+            "success": True,
+            "response": user_proxy.last_message()["content"]
+        }
+        
+    except Exception as e:
+        if "403" in str(e) or "Blocked" in str(e):
+            return {
+                "success": False,
+                "error": "security_violation",
+                "message": "Request blocked by security policy"
+            }
+        else:
+            return {
+                "success": False,
+                "error": "unknown",
+                "message": str(e)
+            }
+
+# Usage
+result = safe_chat(assistant, "Process this user input")
+if not result["success"]:
+    print(f"Error: {result['message']}")
+```
+
+## Security Notes
+
+<Warning>
+  **Important Security Practices**
+  
+  - Keep provider API keys on the KoreShield server only
+  - Use KoreShield API key for client access
+  - Configure policies in your KoreShield dashboard
+  - Enable audit logging for compliance
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="API Key Management">
+    Store provider API keys (OpenAI, Anthropic, etc.) on the KoreShield server, not in your application code. The application only needs the KoreShield API key.
+  </Accordion>
+  
+  <Accordion title="Network Security">
+    Ensure KoreShield is accessible from your AutoGen application but not exposed to the public internet unless properly secured.
+  </Accordion>
+  
+  <Accordion title="Rate Limiting">
+    KoreShield provides centralized rate limiting across all agents to prevent abuse and manage costs.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<Accordion title="401 Unauthorized Responses">
+  Confirm the `Authorization: Bearer <KORESHIELD_API_KEY>` header is correctly set in your `llm_config`.
+</Accordion>
+
+<Accordion title="Agent Errors">
+  Verify that AutoGen is using the proxy `base_url` instead of the default OpenAI endpoint.
+</Accordion>
+
+<Accordion title="Provider Failures">
+  Check that provider API keys are correctly configured on the KoreShield server.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Python SDK" icon="python" href="https://github.com/koreshield/koreshield/tree/main/koreshield-python-sdk">
+    Review SDK usage and examples
+  </Card>
+  <Card title="Configuration" icon="gear" href="/docs/configuration">
+    Configure providers and security policies
+  </Card>
+  <Card title="AutoGen Docs" icon="book" href="https://microsoft.github.io/autogen/">
+    Official AutoGen documentation
+  </Card>
+</CardGroup>

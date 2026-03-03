@@ -1,0 +1,147 @@
+---
+title: Azure OpenAI Integration
+description: Route Azure OpenAI traffic through KoreShield with streaming support.
+---
+
+# Azure OpenAI Integration
+
+KoreShield can proxy Azure OpenAI requests to apply sanitization, detection, and policy enforcement before requests reach your Azure endpoint.
+
+## Model Names
+
+<Info>
+In Azure OpenAI, the `model` field usually maps to your deployment name, not the base model name.
+</Info>
+
+## Setup
+
+<Steps>
+  <Step title="Get Azure Credentials">
+    Obtain your Azure OpenAI endpoint, API key, and deployment name.
+  </Step>
+  
+  <Step title="Configure KoreShield">
+    Set up KoreShield proxy to route Azure OpenAI requests.
+  </Step>
+  
+  <Step title="Update Application">
+    Point your application to the KoreShield proxy endpoint.
+  </Step>
+</Steps>
+
+## Basic Request
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "gpt-5-mini",
+    messages: [{ role: "user", content: "Summarize the ticket backlog." }]
+  })
+});
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "gpt-5-mini",
+        "messages": [{"role": "user", "content": "Summarize the ticket backlog."}]
+    }
+)
+```
+</CodeGroup>
+
+## Streaming
+
+<CodeGroup>
+```typescript TypeScript
+const response = await fetch("http://localhost:8000/v1/chat/completions", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    model: "gpt-5-mini",
+    stream: true,
+    messages: [{ role: "user", content: "Write an executive summary." }]
+  })
+});
+```
+
+```python Python
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    json={
+        "model": "gpt-5-mini",
+        "stream": True,
+        "messages": [{"role": "user", "content": "Write an executive summary."}]
+    },
+    stream=True
+)
+
+for line in response.iter_lines():
+    if line:
+        print(line.decode("utf-8"))
+```
+</CodeGroup>
+
+## System Prompts and Multi-Turn
+
+<CodeGroup>
+```json JSON
+{
+  "model": "gpt-5-mini",
+  "messages": [
+    {"role": "system", "content": "You are a support analyst."},
+    {"role": "user", "content": "Summarize the backlog."},
+    {"role": "assistant", "content": "Summary..."},
+    {"role": "user", "content": "Highlight top risks."}
+  ]
+}
+```
+
+```python Python
+payload = {
+    "model": "gpt-5-mini",
+    "messages": [
+        {"role": "system", "content": "You are a support analyst."},
+        {"role": "user", "content": "Summarize the backlog."},
+        {"role": "assistant", "content": "Summary..."},
+        {"role": "user", "content": "Highlight top risks."}
+    ]
+}
+```
+</CodeGroup>
+
+## Error Handling
+
+<Warning>
+- `403` indicates a blocked request due to policy enforcement
+- `429` or `5xx` typically indicates provider or rate-limit issues
+</Warning>
+
+## Security Controls
+
+```yaml
+security:
+  sensitivity: medium
+  default_action: block
+  features:
+    sanitization: true
+    detection: true
+    policy_enforcement: true
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/docs/configuration">
+    Configure providers and security settings
+  </Card>
+  <Card title="JavaScript SDK" icon="js" href="https://github.com/koreshield/koreshield/tree/main/koreshield-js-sdk">
+    See SDK usage examples
+  </Card>
+</CardGroup>

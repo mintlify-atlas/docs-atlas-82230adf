@@ -1,0 +1,402 @@
+---
+title: Django Integration
+description: Integrate Koreshield with Django applications
+icon: python
+---
+
+# Django Integration Guide
+
+Koreshield can protect **Django** applications using middleware to intercept and inspect requests before they reach your views.
+
+## Installation
+
+```bash
+pip install Koreshield django
+```
+
+## Middleware Setup
+
+<Steps>
+  <Step title="Create Middleware File">
+    Create a file named `middleware.py` in one of your apps (e.g., `yourapp/middleware.py`):
+
+    ```python
+    import asyncio
+    import json
+    from django.http import JsonResponse
+    from django.conf import settings
+    from Koreshield.client import KoreshieldClient
+
+    class KoreshieldMiddleware:
+        def __init__(self, get_response):
+            self.get_response = get_response
+            self.client = KoreshieldClient(
+                base_url=getattr(settings, "Koreshield_URL", "http://localhost:8000")
+            )
+            self.protected_paths = getattr(settings, "Koreshield_PROTECTED_PATHS", [])
+
+        def __call__(self, request):
+            if request.path in self.protected_paths and request.method == "POST":
+                try:
+                    # Basic body parsing - adjust based on your needs
+                    body = json.loads(request.body)
+                    prompt = body.get("message") or body.get("prompt")
+                    
+                    if prompt:
+                        # Sync wrapper around async call
+                        is_safe = asyncio.run(self._check_safety(prompt))
+                        
+                        if not is_safe["is_safe"]:
+                            return JsonResponse({
+                                "error": "Blocked by Koreshield", 
+                                "reason": is_safe["reason"]
+                            }, status=403)
+                except Exception:
+                    pass
+
+            return self.get_response(request)
+
+        async def _check_safety(self, prompt):
+            result = await self.client.guard(prompt)
+            return {"is_safe": result.is_safe, "reason": result.reason}
+    ```
+  </Step>
+  
+  <Step title="Configure Settings">
+    In your `settings.py`:
+
+    ```python
+    MIDDLEWARE = [
+        # ...
+        'yourapp.middleware.KoreshieldMiddleware',
+    ]
+
+    Koreshield_URL = "http://localhost:8000"
+    Koreshield_PROTECTED_PATHS = ["/api/v1/chat", "/api/v1/generate"]
+    ```
+  </Step>
+</Steps>
+
+## Advanced Middleware
+
+### Async Middleware (Django 3.1+)
+
+For high-performance async Django with Generic Async Views:
+
+```python
+import json
+from django.http import JsonResponse
+from django.conf import settings
+from Koreshield.client import KoreshieldClient
+
+class AsyncKoreshieldMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.client = KoreshieldClient(
+            base_url=getattr(settings, "Koreshield_URL", "http://localhost:8000")
+        )
+        self.protected_paths = getattr(settings, "Koreshield_PROTECTED_PATHS", [])
+
+    async def __call__(self, request):
+        if request.path in self.protected_paths and request.method == "POST":
+            try:
+                body = json.loads(request.body)
+                prompt = body.get("message") or body.get("prompt")
+                
+                if prompt:
+                    result = await self.client.guard(prompt)
+                    
+                    if not result.is_safe:
+                        return JsonResponse({
+                            "error": "Blocked by Koreshield",
+                            "reason": result.reason,
+                            "confidence": result.confidence
+                        }, status=403)
+            except json.JSONDecodeError:
+                pass
+            except Exception as e:
+                # Log error but continue
+                print(f"Koreshield middleware error: {e}")
+
+        response = await self.get_response(request)
+        return response
+```
+
+## View-Level Protection
+
+### Decorator Approach
+
+```python
+from functools import wraps
+from django.http import JsonResponse
+from Koreshield.client import KoreshieldClient
+import asyncio
+import json
+
+koreshield = KoreshieldClient()
+
+def koreshield_protected(field_name="message"):
+    """Decorator to protect Django views"""
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            if request.method == "POST":
+                try:
+                    body = json.loads(request.body)
+                    content = body.get(field_name)
+                    
+                    if content:
+                        result = asyncio.run(koreshield.guard(content))
+                        
+                        if not result.is_safe:
+                            return JsonResponse({
+                                "error": "Content blocked",
+                                "reason": result.reason
+                            }, status=403)
+                except Exception as e:
+                    return JsonResponse({
+                        "error": "Validation error",
+                        "details": str(e)
+                    }, status=400)
+            
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+# Usage
+@koreshield_protected(field_name="message")
+def chat_view(request):
+    # Your view logic here
+    return JsonResponse({"response": "Message processed"})
+```
+
+### Class-Based Views
+
+```python
+from django.views import View
+from django.http import JsonResponse
+from Koreshield.client import KoreshieldClient
+import asyncio
+import json
+
+class ProtectedChatView(View):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.koreshield = KoreshieldClient()
+    
+    def post(self, request):
+        try:
+            body = json.loads(request.body)
+            message = body.get("message")
+            
+            if not message:
+                return JsonResponse(
+                    {"error": "Message required"},
+                    status=400
+                )
+            
+            # Check with Koreshield
+            result = asyncio.run(self.koreshield.guard(message))
+            
+            if not result.is_safe:
+                return JsonResponse({
+                    "error": "Content blocked",
+                    "reason": result.reason,
+                    "confidence": result.confidence
+                }, status=403)
+            
+            # Process safe message
+            # response = process_message(message)
+            
+            return JsonResponse({
+                "response": "Message processed successfully"
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse(
+                {"error": "Invalid JSON"},
+                status=400
+            )
+```
+
+## Django REST Framework Integration
+
+### Custom Permission Class
+
+```python
+from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
+from Koreshield.client import KoreshieldClient
+import asyncio
+
+class KoreshieldPermission(permissions.BasePermission):
+    """Check content with Koreshield before allowing access"""
+    
+    def __init__(self):
+        self.client = KoreshieldClient()
+    
+    def has_permission(self, request, view):
+        if request.method in ['POST', 'PUT', 'PATCH']:
+            # Check message field
+            message = request.data.get('message') or request.data.get('prompt')
+            
+            if message:
+                result = asyncio.run(self.client.guard(message))
+                
+                if not result.is_safe:
+                    raise PermissionDenied({
+                        "error": "Content blocked",
+                        "reason": result.reason
+                    })
+        
+        return True
+
+# Usage in ViewSet
+from rest_framework import viewsets
+from rest_framework.response import Response
+
+class ChatViewSet(viewsets.ViewSet):
+    permission_classes = [KoreshieldPermission]
+    
+    def create(self, request):
+        # Message already validated by permission class
+        message = request.data.get('message')
+        
+        # Process message
+        return Response({"response": "Processed"})
+```
+
+### Serializer Validation
+
+```python
+from rest_framework import serializers
+from Koreshield.client import KoreshieldClient
+import asyncio
+
+class SecureMessageSerializer(serializers.Serializer):
+    message = serializers.CharField(max_length=10000)
+    context = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate_message(self, value):
+        """Validate message with Koreshield"""
+        client = KoreshieldClient()
+        result = asyncio.run(client.guard(value))
+        
+        if not result.is_safe:
+            raise serializers.ValidationError(
+                f"Content blocked: {result.reason}"
+            )
+        
+        return value
+
+# Usage
+from rest_framework.views import APIView
+
+class ChatAPIView(APIView):
+    def post(self, request):
+        serializer = SecureMessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Message is safe to process
+        message = serializer.validated_data['message']
+        
+        return Response({"response": "Processed"})
+```
+
+## Configuration
+
+### Settings
+
+```python
+# settings.py
+
+# Koreshield Configuration
+KORESHIELD_URL = os.getenv("KORESHIELD_URL", "http://localhost:8000")
+KORESHIELD_API_KEY = os.getenv("KORESHIELD_API_KEY")
+KORESHIELD_PROTECTED_PATHS = [
+    "/api/v1/chat",
+    "/api/v1/generate",
+    "/api/v1/completion"
+]
+
+# Security settings
+KORESHIELD_SENSITIVITY = "medium"  # low, medium, high
+KORESHIELD_BLOCK_ON_ERROR = False  # Continue on Koreshield errors
+```
+
+### Environment Variables
+
+```bash
+# .env
+KORESHIELD_URL=http://localhost:8000
+KORESHIELD_API_KEY=your-api-key-here
+KORESHIELD_SENSITIVITY=medium
+```
+
+## Testing
+
+```python
+from django.test import TestCase, Client
+from unittest.mock import patch, AsyncMock
+import json
+
+class KoreshieldMiddlewareTestCase(TestCase):
+    def setUp(self):
+        self.client = Client()
+    
+    @patch('Koreshield.client.KoreshieldClient.guard')
+    def test_safe_message(self, mock_guard):
+        mock_guard.return_value = AsyncMock(
+            is_safe=True,
+            reason=None
+        )
+        
+        response = self.client.post(
+            '/api/v1/chat',
+            data=json.dumps({"message": "Hello"}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+    
+    @patch('Koreshield.client.KoreshieldClient.guard')
+    def test_blocked_message(self, mock_guard):
+        mock_guard.return_value = AsyncMock(
+            is_safe=False,
+            reason="Prompt injection detected"
+        )
+        
+        response = self.client.post(
+            '/api/v1/chat',
+            data=json.dumps({"message": "Malicious input"}),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertIn("Blocked", data["error"])
+```
+
+## Notes
+
+<Note>
+  **Async Support**: For high-performance async Django (Generic Async Views), use `__acall__` instead of `__call__` in your middleware.
+</Note>
+
+<Warning>
+  **Network Accessibility**: Ensure `KoreshieldProxy` is reachable from your Django backend.
+</Warning>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Python SDK" icon="python" href="https://github.com/koreshield/koreshield/tree/main/koreshield-python-sdk">
+    Complete Python SDK documentation
+  </Card>
+  <Card title="Django Docs" icon="book" href="https://docs.djangoproject.com/">
+    Official Django documentation
+  </Card>
+  <Card title="DRF Docs" icon="code" href="https://www.django-rest-framework.org/">
+    Django REST Framework docs
+  </Card>
+</CardGroup>

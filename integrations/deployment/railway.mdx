@@ -1,0 +1,125 @@
+---
+title: Railway Deployment
+description: Deploy the KoreShield proxy on Railway using a Docker image
+icon: train
+---
+
+Deploy KoreShield to Railway using a Docker image from this repo. Railway handles build, deploy, and TLS for you.
+
+## Use Cases
+
+- Fast production deploys with minimal ops
+- Staging environments for LLM policy changes
+- Small to mid-scale workloads with managed hosting
+
+## Prerequisites
+
+- Railway account
+- KoreShield repo or a Docker image in a registry
+- Provider API keys available as Railway variables
+
+## Option A: Deploy from GitHub Repo
+
+<Steps>
+  <Step title="Create Railway Project">
+    Create a new Railway project
+  </Step>
+
+  <Step title="Connect GitHub Repo">
+    Connect your GitHub repo
+  </Step>
+
+  <Step title="Select Service">
+    Select the `koreshield` service
+  </Step>
+
+  <Step title="Auto-detect Dockerfile">
+    Railway will detect the `Dockerfile`
+  </Step>
+</Steps>
+
+## Option B: Deploy from a Docker Image
+
+<Steps>
+  <Step title="Build and Push Image">
+    ```bash
+    docker build -t koreshield .
+    docker tag koreshield:latest &lt;registry&gt;/koreshield:latest
+    docker push &lt;registry&gt;/koreshield:latest
+    ```
+  </Step>
+
+  <Step title="Create Service from Image">
+    In Railway, create a service from the image
+  </Step>
+</Steps>
+
+## Configure Environment Variables
+
+<Info>
+Set environment variables in Railway's dashboard for secure configuration management.
+</Info>
+
+Set these Railway variables:
+
+```bash
+OPENAI_API_KEY=your-api-key
+KORESHIELD_API_KEY=your-koreshield-api-key
+```
+
+If you use a custom config path:
+
+```bash
+CONFIG_FILE=/app/config/config.yaml
+```
+
+## Mount Config (Optional)
+
+Railway supports volumes. If you mount a config file, make sure the path matches your `CONFIG_FILE` value.
+
+## Health Check
+
+```bash
+curl https://&lt;railway-domain&gt;/health
+```
+
+## Observability
+
+- Enable `json_logs: true` for structured logging
+- Scrape `/metrics` from an internal monitor or a private endpoint
+- Watch Railway logs for startup and provider errors
+
+## Security Notes
+
+<Warning>
+Never commit API keys to your repository. Always use Railway environment variables.
+</Warning>
+
+- Keep provider keys in Railway variables, not in code
+- Use `KORESHIELD_API_KEY` to protect access to the proxy
+- Restrict access with a private domain or gateway if needed
+
+## Troubleshooting
+
+<CodeGroup>
+```text Authentication
+401 responses: confirm `KORESHIELD_API_KEY` on clients
+```
+
+```text Build Issues
+Build failures: verify the Dockerfile path and build context
+```
+
+```text Provider Errors
+Provider errors: confirm provider keys are present in variables
+```
+
+```text Timeouts
+Timeouts: increase client timeouts for streaming responses
+```
+</CodeGroup>
+
+## Next Steps
+
+- Configure providers in [/configuration/](/configuration/overview)
+- Add monitoring in [../monitoring/prometheus.mdx](../monitoring/prometheus.mdx)

@@ -1,0 +1,166 @@
+---
+title: Autonomous AI Agents
+description: Securing agentic workflows with tool use, approvals, and guardrails
+---
+
+# Autonomous AI Agents
+
+How a SaaS operations team secured agent-driven workflows that can execute tools, browse data, and trigger production changes.
+
+## Challenge
+
+An internal operations platform used autonomous agents to:
+
+- Triage incidents and open tickets
+- Query logs and metrics
+- Run controlled remediation scripts
+- Summarize root causes for postmortems
+
+<Warning>
+**Critical Requirements**
+- Prevent agents from executing unsafe commands
+- Restrict tool access by user role and environment
+- Maintain an audit trail for every tool invocation
+- Reduce false positives without slowing down incident response
+</Warning>
+
+## Solution
+
+KoreShield was inserted before any tool call or external API request. Each tool request was scanned, policy-checked, and either allowed, queued for approval, or blocked.
+
+```typescript
+import { Koreshield } from "koreshield-sdk";
+
+const koreshield = new Koreshield({
+  apiKey: process.env.KORESHIELD_API_KEY,
+  sensitivity: "high",
+});
+
+async function guardToolCall(agentId: string, tool: string, args: string) {
+  const scan = await koreshield.scan({
+    content: args,
+    userId: agentId,
+    metadata: {
+      tool,
+      environment: "prod",
+      risk: "elevated",
+    },
+  });
+
+  if (scan.threat_detected) {
+    return { allowed: false, reason: scan.threat_type };
+  }
+
+  if (tool === "runShell" || tool === "deployService") {
+    return { allowed: false, reason: "Requires approval" };
+  }
+
+  return { allowed: true };
+}
+```
+
+## Agent Workflow
+
+The agent pipeline was split into deterministic stages to reduce ambiguity:
+
+<Steps>
+  <Step title="Plan">
+    Generate a step-by-step plan and required tools
+  </Step>
+  <Step title="Authorize">
+    Validate tool use against allowlists and risk tiers
+  </Step>
+  <Step title="Execute">
+    Run tools with scoped credentials and time limits
+  </Step>
+  <Step title="Review">
+    Summarize actions and store the audit trail
+  </Step>
+</Steps>
+
+This kept each decision observable and enforced policy at every stage.
+
+## Guardrail Design
+
+<CardGroup cols={2}>
+  <Card title="Tool Allowlist" icon="list-check">
+    Only approved tools were exposed to agents
+  </Card>
+  <Card title="Risk Tiers" icon="layer-group">
+    Sensitive tools required human approval
+  </Card>
+  <Card title="Context Scopes" icon="lock">
+    Tokens limited to a single incident or service
+  </Card>
+  <Card title="Rate Limits" icon="gauge-high">
+    Per-agent limits to prevent runaway loops
+  </Card>
+</CardGroup>
+
+## Approval Workflow
+
+High-risk tools triggered an approval queue with a human operator:
+
+<Tabs>
+  <Tab title="Required Approvals">
+    Deploy, rollback, and shell execution operations
+  </Tab>
+  <Tab title="Allowed with Warnings">
+    Read-only diagnostics and monitoring queries
+  </Tab>
+  <Tab title="Auto-Blocked">
+    Network scans, data exports, or privilege changes
+  </Tab>
+</Tabs>
+
+All approvals recorded the user, tool, args hash, and timestamp.
+
+## Monitoring and Auditing
+
+<AccordionGroup>
+  <Accordion title="Structured Logs">
+    Tool calls captured as JSON for SIEM ingestion
+  </Accordion>
+  <Accordion title="Per-Agent Limits">
+    Daily caps for tool usage and tokens
+  </Accordion>
+  <Accordion title="Traceability">
+    Each response linked to the tool calls that produced it
+  </Accordion>
+</AccordionGroup>
+
+## Results
+
+<CardGroup cols={3}>
+  <Card title="Zero Unsafe Calls" icon="shield-check">
+    Eliminated unsafe tool calls in production workflows
+  </Card>
+  <Card title="Faster Response" icon="bolt">
+    Reduced incident response time with safe, automated triage
+  </Card>
+  <Card title="Full Auditability" icon="clipboard-check">
+    Complete audit trail for tool usage and model outputs
+  </Card>
+</CardGroup>
+
+## Lessons Learned
+
+<Note>
+- Agents are safest when tool access is narrow and explicit
+- Approval queues should be fast and templated for on-call teams
+- Policy tuning improves over time with real-world incident data
+</Note>
+
+## Related Documentation
+
+<CardGroup cols={3}>
+  <Card title="Security" icon="shield" href="/features/security-policies">
+    Learn about threat detection
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/integrations/monitoring">
+    Set up alerts and dashboards
+  </Card>
+  <Card title="RAG Security" icon="database" href="/advanced/rag-security">
+    Secure retrieval pipelines
+  </Card>
+</CardGroup>
